@@ -14,6 +14,34 @@ This ordering is mandatory to preserve governance and behavioral constraints at 
 
 ---
 
+## Runnable Reference App (FastAPI)
+
+This repository now includes a runnable API prototype in `app/` that implements the core platform contracts:
+
+- layers: execution, meaning, governance, experience
+- agents: intake, evidence structuring, AQAL mapping, value-logic, systems, process guidance, intervention, regenerative governance, critic, synthesis
+- objects: case, stakeholder, evidence, hypothesis, model registry, intervention, validation, audit log, pattern memory
+- workflow: intake -> evidence -> interpretation -> synthesis -> intervention -> governance review -> human validation -> memory write-back
+
+### Quick start
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+### Useful endpoints
+
+- `POST /bootstrap-case`
+- `POST /cases/{case_id}/seed-sample-evidence`
+- `POST /cases/{case_id}/run-workflow`
+- `GET /cases/{case_id}/bundle`
+- `GET /audit/{case_id}`
+
+---
+
 ## 1) Platform Overview
 
 Interflow is a human-in-the-loop AI platform that helps practitioners diagnose situations, compare interpretations across multiple lenses, design interventions, and learn from outcomes.
