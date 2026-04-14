@@ -4,6 +4,16 @@ This document is a **development-ready system specification** for building Inter
 
 ---
 
+## Prompt Stack Order (Required)
+
+1. **System prompt must be loaded first** from `prompts/system_prompt.md`.
+2. Developer/orchestrator prompts are layered after the system prompt.
+3. Task/user case context is layered last.
+
+This ordering is mandatory to preserve governance and behavioral constraints at the highest priority.
+
+---
+
 ## 1) Platform Overview
 
 Interflow is a human-in-the-loop AI platform that helps practitioners diagnose situations, compare interpretations across multiple lenses, design interventions, and learn from outcomes.
