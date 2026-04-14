@@ -23,8 +23,7 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
     }
 
     for h in [h1, h2]:
-        store.hypotheses[h.id] = h
-        store.link(case_id, "hypotheses", h.id)
+        store.save_hypothesis(h)
         case.hypothesis_ids.append(h.id)
 
     case.status = CaseStatus.intervention
@@ -32,8 +31,7 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
     intervention_checks = {}
     for i in ints:
         intervention_checks[i.id] = enforce_intervention_policy(i)
-        store.interventions[i.id] = i
-        store.link(case_id, "interventions", i.id)
+        store.save_intervention(i)
         case.intervention_ids.append(i.id)
 
     case.status = CaseStatus.governance_review
@@ -42,6 +40,7 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
     )
 
     case.status = CaseStatus.human_validation if review_required else CaseStatus.active
+    store.save_case(case)
 
     synthesis = synthesis_output(case.title, evidence, [h1, h2], ints)
 
@@ -60,8 +59,7 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
             "intervention_policy": "pass" if all(v["pass"] for v in intervention_checks.values()) else "needs_review",
         },
     )
-    store.audit_logs[audit.id] = audit
-    store.link(case_id, "audit", audit.id)
+    store.save_audit(audit)
 
     return {
         "case_id": case_id,

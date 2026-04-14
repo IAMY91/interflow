@@ -32,11 +32,23 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+Demo UI: open `http://127.0.0.1:8000/`
+
+### Demo API keys
+
+- `admin-key`
+- `practitioner-key`
+- `reviewer-key`
+- `auditor-key`
+
+Send as header: `X-API-Key: practitioner-key`
+
 ### Useful endpoints
 
 - `POST /bootstrap-case`
 - `POST /cases/{case_id}/seed-sample-evidence`
-- `POST /cases/{case_id}/run-workflow`
+- `POST /cases/{case_id}/run-workflow` (sync)
+- `POST /jobs/workflow/{case_id}` + `GET /jobs/{job_id}` (async)
 - `GET /cases/{case_id}/bundle`
 - `GET /audit/{case_id}`
 

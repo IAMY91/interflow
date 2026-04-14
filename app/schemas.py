@@ -138,6 +138,16 @@ class PatternMemory(BaseModel):
     outcome_summary: str
 
 
+class OutcomeObservation(BaseModel):
+    id: str
+    case_id: str
+    intervention_id: str
+    observed_effects: List[str] = Field(default_factory=list)
+    regenerative_signals: Dict[str, str] = Field(default_factory=dict)
+    confidence: float = Field(ge=0, le=1)
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
 class AnalysisOutput(BaseModel):
     situation_summary: str
     evidence_observed: List[str]

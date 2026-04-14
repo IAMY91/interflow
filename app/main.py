@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
+from .auth import Role, require_roles
 from .schemas import (
     AuditLog,
     Case,
     CaseStatus,
     Evidence,
-    Hypothesis,
-    Intervention,
     ModelRegistryEntry,
+    OutcomeObservation,
     PatternMemory,
     Stakeholder,
     ValidationRecord,
@@ -20,104 +23,165 @@ from .schemas import (
 from .store import InMemoryStore
 from .workflow import make_sample_evidence, run_case_workflow
 
-app = FastAPI(title="Interflow", version="0.1.0")
+app = FastAPI(title="Interflow", version="0.2.0")
 store = InMemoryStore()
+
+WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+if WEB_DIR.exists():
+    app.mount("/web", StaticFiles(directory=str(WEB_DIR)), name="web")
 
 
 @app.get("/")
+def index() -> FileResponse:
+    html = WEB_DIR / "index.html"
+    if not html.exists():
+        raise HTTPException(status_code=404, detail="frontend not found")
+    return FileResponse(html)
+
+
+@app.get("/health")
 def health() -> dict:
     return {
         "name": "interflow",
         "status": "ok",
         "layers": ["execution", "meaning", "governance", "experience"],
+        "rbac": ["admin", "practitioner", "reviewer", "auditor"],
     }
 
 
 @app.post("/cases", response_model=Case)
-def create_case(payload: Case) -> Case:
+def create_case(payload: Case, _: Role = Depends(require_roles(Role.admin, Role.practitioner))) -> Case:
     if payload.id in store.cases:
         raise HTTPException(status_code=409, detail="case already exists")
-    store.cases[payload.id] = payload
+    store.save_case(payload)
     return payload
 
 
 @app.get("/cases/{case_id}/bundle")
-def get_case_bundle(case_id: str) -> dict:
+def get_case_bundle(case_id: str, _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor))) -> dict:
     if case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
     return store.get_case_bundle(case_id)
 
 
 @app.post("/cases/{case_id}/stakeholders", response_model=Stakeholder)
-def add_stakeholder(case_id: str, stakeholder: Stakeholder) -> Stakeholder:
+def add_stakeholder(
+    case_id: str,
+    stakeholder: Stakeholder,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner)),
+) -> Stakeholder:
     if case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
-    store.stakeholders[stakeholder.id] = stakeholder
-    store.link(case_id, "stakeholders", stakeholder.id)
-    store.cases[case_id].stakeholder_ids.append(stakeholder.id)
+    store.save_stakeholder(stakeholder)
+    case = store.cases[case_id]
+    case.stakeholder_ids.append(stakeholder.id)
+    store.save_case(case)
     return stakeholder
 
 
 @app.post("/cases/{case_id}/evidence", response_model=Evidence)
-def add_evidence(case_id: str, evidence: Evidence) -> Evidence:
+def add_evidence(case_id: str, evidence: Evidence, _: Role = Depends(require_roles(Role.admin, Role.practitioner))) -> Evidence:
     if case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
-    store.evidence[evidence.id] = evidence
-    store.link(case_id, "evidence", evidence.id)
-    store.cases[case_id].evidence_ids.append(evidence.id)
+    store.save_evidence(evidence)
+    case = store.cases[case_id]
+    case.evidence_ids.append(evidence.id)
+    case.status = CaseStatus.evidence
+    store.save_case(case)
     return evidence
 
 
 @app.post("/cases/{case_id}/seed-sample-evidence", response_model=List[Evidence])
-def seed_sample_evidence(case_id: str) -> List[Evidence]:
+def seed_sample_evidence(case_id: str, _: Role = Depends(require_roles(Role.admin, Role.practitioner))) -> List[Evidence]:
     if case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
     seeded = make_sample_evidence(case_id)
+    case = store.cases[case_id]
     for ev in seeded:
-        store.evidence[ev.id] = ev
-        store.link(case_id, "evidence", ev.id)
-        store.cases[case_id].evidence_ids.append(ev.id)
-    store.cases[case_id].status = CaseStatus.evidence
+        store.save_evidence(ev)
+        case.evidence_ids.append(ev.id)
+    case.status = CaseStatus.evidence
+    store.save_case(case)
     return seeded
 
 
+def _run_job(job_id: str, case_id: str) -> None:
+    store.db.set_job(job_id, case_id, "running", {})
+    try:
+        result = run_case_workflow(store, case_id)
+        store.db.set_job(job_id, case_id, "completed", result)
+    except Exception as exc:  # noqa: BLE001
+        store.db.set_job(job_id, case_id, "failed", {"error": str(exc)})
+
+
+@app.post("/jobs/workflow/{case_id}")
+def start_workflow_job(
+    case_id: str,
+    background_tasks: BackgroundTasks,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner)),
+) -> dict:
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    job_id = f"job_{uuid4().hex[:8]}"
+    store.db.set_job(job_id, case_id, "queued", {})
+    background_tasks.add_task(_run_job, job_id, case_id)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: str, _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor))) -> dict:
+    job = store.db.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+    return job
+
+
 @app.post("/cases/{case_id}/run-workflow")
-def run_workflow(case_id: str) -> dict:
+def run_workflow_sync(case_id: str, _: Role = Depends(require_roles(Role.admin, Role.practitioner))) -> dict:
     if case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
     return run_case_workflow(store, case_id)
 
 
 @app.post("/models", response_model=ModelRegistryEntry)
-def register_model(entry: ModelRegistryEntry) -> ModelRegistryEntry:
-    store.model_registry[entry.name] = entry
+def register_model(entry: ModelRegistryEntry, _: Role = Depends(require_roles(Role.admin))) -> ModelRegistryEntry:
+    store.save_model(entry)
     return entry
 
 
 @app.get("/models", response_model=List[ModelRegistryEntry])
-def list_models() -> List[ModelRegistryEntry]:
+def list_models(_: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor))) -> List[ModelRegistryEntry]:
     return list(store.model_registry.values())
 
 
 @app.post("/validations", response_model=ValidationRecord)
-def submit_validation(record: ValidationRecord) -> ValidationRecord:
+def submit_validation(record: ValidationRecord, _: Role = Depends(require_roles(Role.admin, Role.reviewer))) -> ValidationRecord:
     if record.case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
-    store.validations[record.id] = record
-    store.link(record.case_id, "validations", record.id)
+    store.save_validation(record)
     if record.action in {"approve", "override"}:
-        store.cases[record.case_id].status = CaseStatus.active
+        case = store.cases[record.case_id]
+        case.status = CaseStatus.active
+        store.save_case(case)
     return record
 
 
 @app.post("/patterns", response_model=PatternMemory)
-def add_pattern(pattern: PatternMemory) -> PatternMemory:
-    store.pattern_memory[pattern.id] = pattern
+def add_pattern(pattern: PatternMemory, _: Role = Depends(require_roles(Role.admin, Role.practitioner))) -> PatternMemory:
+    store.save_pattern(pattern)
     return pattern
 
 
+@app.post("/outcomes", response_model=OutcomeObservation)
+def add_outcome(outcome: OutcomeObservation, _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer))) -> OutcomeObservation:
+    if outcome.case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    store.save_outcome(outcome)
+    return outcome
+
+
 @app.get("/audit/{case_id}", response_model=List[AuditLog])
-def list_audit(case_id: str) -> List[AuditLog]:
+def list_audit(case_id: str, _: Role = Depends(require_roles(Role.admin, Role.auditor, Role.reviewer))) -> List[AuditLog]:
     if case_id not in store.cases:
         raise HTTPException(status_code=404, detail="case not found")
     ids = store.case_index[case_id]["audit"]
@@ -125,14 +189,14 @@ def list_audit(case_id: str) -> List[AuditLog]:
 
 
 @app.post("/bootstrap-case")
-def bootstrap_case() -> dict:
+def bootstrap_case(_: Role = Depends(require_roles(Role.admin, Role.practitioner))) -> dict:
     case = Case(
         id=f"case_{uuid4().hex[:8]}",
         title="Cross-functional decision friction",
         context_summary="Decisions are frequently revisited across teams.",
         goals=["reduce decision churn", "improve trust and accountability"],
     )
-    store.cases[case.id] = case
+    store.save_case(case)
 
     st = Stakeholder(
         id=f"st_{uuid4().hex[:8]}",
@@ -141,8 +205,8 @@ def bootstrap_case() -> dict:
         relationship_context="Coordinates with operations and engineering",
         stated_goals=["clarity", "faster execution"],
     )
-    store.stakeholders[st.id] = st
-    store.link(case.id, "stakeholders", st.id)
+    store.save_stakeholder(st)
     case.stakeholder_ids.append(st.id)
+    store.save_case(case)
 
     return {"case": case, "stakeholder": st}
