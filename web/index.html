@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interflow Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 980px; }
+    button { margin-right: 0.5rem; margin-bottom: 0.5rem; }
+    pre { background: #111; color: #d8ffd8; padding: 1rem; border-radius: 8px; overflow: auto; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Interflow Demo UI</h1>
+  <p class="muted">API key header used: <code>X-API-Key: practitioner-key</code></p>
+
+  <button id="bootstrap">1) Bootstrap Case</button>
+  <button id="seed" disabled>2) Seed Evidence</button>
+  <button id="run" disabled>3) Run Async Workflow</button>
+  <button id="poll" disabled>4) Poll Job</button>
+
+  <h3>Output</h3>
+  <pre id="out">Ready.</pre>
+
+  <script>
+    const out = document.getElementById('out');
+    let caseId = null;
+    let jobId = null;
+
+    const req = async (url, opts={}) => {
+      const headers = Object.assign({ 'X-API-Key': 'practitioner-key', 'Content-Type': 'application/json' }, opts.headers || {});
+      const res = await fetch(url, { ...opts, headers });
+      const body = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(body));
+      return body;
+    };
+
+    document.getElementById('bootstrap').onclick = async () => {
+      try {
+        const data = await req('/bootstrap-case', { method: 'POST' });
+        caseId = data.case.id;
+        document.getElementById('seed').disabled = false;
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) { out.textContent = e.message; }
+    };
+
+    document.getElementById('seed').onclick = async () => {
+      try {
+        const data = await req(`/cases/${caseId}/seed-sample-evidence`, { method: 'POST' });
+        document.getElementById('run').disabled = false;
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) { out.textContent = e.message; }
+    };
+
+    document.getElementById('run').onclick = async () => {
+      try {
+        const data = await req(`/jobs/workflow/${caseId}`, { method: 'POST' });
+        jobId = data.job_id;
+        document.getElementById('poll').disabled = false;
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) { out.textContent = e.message; }
+    };
+
+    document.getElementById('poll').onclick = async () => {
+      try {
+        const data = await req(`/jobs/${jobId}`);
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) { out.textContent = e.message; }
+    };
+  </script>
+</body>
+</html>
