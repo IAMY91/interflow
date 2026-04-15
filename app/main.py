@@ -5,6 +5,7 @@ from typing import List
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -21,6 +22,7 @@ from .schemas import (
     ValidationRecord,
 )
 from .store import InMemoryStore
+from .agents import structure_evidence
 from .workflow import make_sample_evidence, run_case_workflow
 
 app = FastAPI(title="Interflow", version="0.2.0")
@@ -105,6 +107,31 @@ def seed_sample_evidence(case_id: str, _: Role = Depends(require_roles(Role.admi
     return seeded
 
 
+class IngestTextPayload(BaseModel):
+    raw_text: str
+    source: str
+    source_type: str
+
+
+@app.post("/cases/{case_id}/ingest-text", response_model=List[Evidence])
+def ingest_text(
+    case_id: str,
+    payload: IngestTextPayload,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner)),
+) -> List[Evidence]:
+    """Extract structured Evidence objects from raw text using the Evidence Structuring Agent."""
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    items = structure_evidence(case_id, payload.raw_text, payload.source, payload.source_type)
+    case = store.cases[case_id]
+    for ev in items:
+        store.save_evidence(ev)
+        case.evidence_ids.append(ev.id)
+    case.status = CaseStatus.evidence
+    store.save_case(case)
+    return items
+
+
 def _run_job(job_id: str, case_id: str) -> None:
     store.db.set_job(job_id, case_id, "running", {})
     try:
@@ -186,6 +213,32 @@ def list_audit(case_id: str, _: Role = Depends(require_roles(Role.admin, Role.au
         raise HTTPException(status_code=404, detail="case not found")
     ids = store.case_index[case_id]["audit"]
     return [store.audit_logs[i] for i in ids if i in store.audit_logs]
+
+
+@app.get("/metrics")
+def get_metrics(_: Role = Depends(require_roles(Role.admin, Role.auditor))) -> dict:
+    """Operational observability: case counts by status, policy violation rate, audit event count."""
+    from collections import Counter
+    status_counts = Counter(c.status for c in store.cases.values())
+    total_audits = len(store.audit_logs)
+
+    # Policy violation rate: proportion of audit logs where any policy is "needs_review"
+    violation_count = sum(
+        1 for a in store.audit_logs.values()
+        if "needs_review" in a.policy_results.values()
+    )
+    violation_rate = round(violation_count / total_audits, 3) if total_audits else 0.0
+
+    return {
+        "cases_total": len(store.cases),
+        "cases_by_status": {k.value: v for k, v in status_counts.items()},
+        "evidence_total": len(store.evidence),
+        "hypotheses_total": len(store.hypotheses),
+        "interventions_total": len(store.interventions),
+        "audit_events_total": total_audits,
+        "policy_violation_rate": violation_rate,
+        "pattern_memory_total": len(store.pattern_memory),
+    }
 
 
 @app.post("/bootstrap-case")

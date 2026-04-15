@@ -10,8 +10,18 @@ from .store import InMemoryStore
 
 def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
     case = store.cases[case_id]
+
+    # Guard: refuse to re-run a closed case
+    if case.status == CaseStatus.closed:
+        return {
+            "case_id": case_id,
+            "error": "workflow_refused",
+            "reason": "Case is closed. Re-open or create a new case to run the workflow again.",
+        }
+
     evidence = [store.evidence[eid] for eid in store.case_index[case_id]["evidence"] if eid in store.evidence]
 
+    # ── Interpretation phase ────────────────────────────────────────────────
     case.status = CaseStatus.interpretation
     aqal = aqal_mapping(evidence)
 
@@ -26,14 +36,26 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         store.save_hypothesis(h)
         case.hypothesis_ids.append(h.id)
 
+    # ── Synthesis phase (state machine checkpoint) ──────────────────────────
+    case.status = CaseStatus.synthesis
+    store.save_case(case)  # persist the synthesis checkpoint for auditability
+
+    # ── Intervention phase ──────────────────────────────────────────────────
     case.status = CaseStatus.intervention
-    ints = intervention_candidates(case_id)
-    intervention_checks = {}
+    ints = intervention_candidates(case_id, hypotheses=[h1, h2])
+
+    # Compute ranking scores and sort highest first
+    for i in ints:
+        i.score = i.compute_score()
+    ints.sort(key=lambda x: x.score, reverse=True)
+
+    intervention_checks: dict = {}
     for i in ints:
         intervention_checks[i.id] = enforce_intervention_policy(i)
         store.save_intervention(i)
         case.intervention_ids.append(i.id)
 
+    # ── Governance review ───────────────────────────────────────────────────
     case.status = CaseStatus.governance_review
     review_required = any(not v["pass"] for v in hypothesis_checks.values()) or any(
         not v["pass"] for v in intervention_checks.values()
@@ -43,6 +65,15 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
     store.save_case(case)
 
     synthesis = synthesis_output(case.title, evidence, [h1, h2], ints)
+
+    # Build structured policy_results for audit log
+    policy_violations: dict = {}
+    for hid, check in hypothesis_checks.items():
+        if not check["pass"]:
+            policy_violations[f"hypothesis:{hid}"] = [v["rule"] for v in check["violations"]]
+    for iid, check in intervention_checks.items():
+        if not check["pass"]:
+            policy_violations[f"intervention:{iid}"] = [v["rule"] for v in check["violations"]]
 
     audit = AuditLog(
         id=f"aud_{uuid4().hex[:8]}",
@@ -57,6 +88,8 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         policy_results={
             "hypothesis_policy": "pass" if all(v["pass"] for v in hypothesis_checks.values()) else "needs_review",
             "intervention_policy": "pass" if all(v["pass"] for v in intervention_checks.values()) else "needs_review",
+            "violations_count": str(len(policy_violations)),
+            "violated_items": str(list(policy_violations.keys())),
         },
     )
     store.save_audit(audit)
