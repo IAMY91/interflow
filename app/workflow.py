@@ -1,11 +1,35 @@
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from .agents import aqal_mapping, intervention_candidates, synthesis_output, systems_hypothesis, value_logic_hypothesis
 from .governance import enforce_hypothesis_policy, enforce_intervention_policy
 from .schemas import AuditLog, CaseStatus, Evidence
 from .store import InMemoryStore
+
+logger = logging.getLogger(__name__)
+
+# Models consumed by each workflow phase
+_INTERPRETATION_MODELS = ["AQAL", "Spiral Dynamics", "VSM", "Cynefin"]
+_INTERVENTION_MODELS   = ["ADKAR", "Antifragility", "Flow"]
+
+
+def _check_model_requirements(store: InMemoryStore, model_names: list[str], evidence_count: int) -> list[str]:
+    """Return a list of policy warning strings for unregistered models or unmet evidence minimums."""
+    warnings: list[str] = []
+    for name in model_names:
+        entry = store.model_registry.get(name)
+        if entry is None:
+            warnings.append(f"model_not_registered:{name}")
+            logger.warning("Model %r not in registry — proceeding without registry constraints", name)
+            continue
+        min_total = entry.min_evidence_requirements.get("total", 0)
+        if evidence_count < min_total:
+            warnings.append(
+                f"evidence_below_minimum_for:{name} (requires {min_total}, have {evidence_count})"
+            )
+    return warnings
 
 
 def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
@@ -20,6 +44,12 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         }
 
     evidence = [store.evidence[eid] for eid in store.case_index[case_id]["evidence"] if eid in store.evidence]
+
+    # ── Model registry pre-flight ────────────────────────────────────────────
+    registry_warnings = (
+        _check_model_requirements(store, _INTERPRETATION_MODELS, len(evidence))
+        + _check_model_requirements(store, _INTERVENTION_MODELS, len(evidence))
+    )
 
     # ── Interpretation phase ────────────────────────────────────────────────
     case.status = CaseStatus.interpretation
@@ -90,6 +120,7 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
             "intervention_policy": "pass" if all(v["pass"] for v in intervention_checks.values()) else "needs_review",
             "violations_count": str(len(policy_violations)),
             "violated_items": str(list(policy_violations.keys())),
+            "registry_warnings": str(registry_warnings) if registry_warnings else "none",
         },
     )
     store.save_audit(audit)
@@ -98,6 +129,7 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         "case_id": case_id,
         "stage": case.status,
         "aqal": aqal,
+        "registry_warnings": registry_warnings,
         "hypothesis_checks": hypothesis_checks,
         "intervention_checks": intervention_checks,
         "analysis": synthesis.model_dump(),

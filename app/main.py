@@ -59,6 +59,11 @@ def create_case(payload: Case, _: Role = Depends(require_roles(Role.admin, Role.
     return payload
 
 
+@app.get("/cases", response_model=List[Case])
+def list_cases(_: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor))) -> List[Case]:
+    return list(store.cases.values())
+
+
 @app.get("/cases/{case_id}/bundle")
 def get_case_bundle(case_id: str, _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor))) -> dict:
     if case_id not in store.cases:
