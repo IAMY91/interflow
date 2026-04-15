@@ -101,6 +101,28 @@ class Intervention(BaseModel):
     success_indicators: List[str] = Field(default_factory=list)
     failure_indicators: List[str] = Field(default_factory=list)
     regenerative_impact_notes: str
+    # Ranking fields (used by the scoring formula in README §8.3)
+    impact: float = Field(default=0.5, ge=0, le=1)
+    feasibility: float = Field(default=0.5, ge=0, le=1)
+    evidence_strength: float = Field(default=0.5, ge=0, le=1)
+    regenerative_fit: float = Field(default=0.5, ge=0, le=1)
+    score: float = Field(default=0.0)  # computed by workflow
+
+    def compute_score(self) -> float:
+        """Ranking formula from README §8.3.
+
+        score = (impact * 0.30) + (feasibility * 0.20) + (evidence_strength * 0.20)
+              + (regenerative_fit * 0.20) - (risk_numeric * 0.10)
+        """
+        risk_map = {"low": 0.2, "medium": 0.5, "high": 0.8}
+        risk_numeric = risk_map.get(self.risk_profile.lower(), 0.5)
+        return (
+            self.impact * 0.30
+            + self.feasibility * 0.20
+            + self.evidence_strength * 0.20
+            + self.regenerative_fit * 0.20
+            - risk_numeric * 0.10
+        )
 
 
 class ValidationRecord(BaseModel):
@@ -148,15 +170,46 @@ class OutcomeObservation(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
+# ---------------------------------------------------------------------------
+# Structured reference types for AnalysisOutput
+# (replaces List[str] to preserve claim-to-evidence traceability)
+# ---------------------------------------------------------------------------
+
+class EvidenceRef(BaseModel):
+    """Structured reference to an evidence object in synthesis output."""
+    id: str
+    excerpt: str
+    reliability: float = Field(ge=0, le=1)
+    quadrant: Optional[str] = None
+
+
+class HypothesisRef(BaseModel):
+    """Structured reference to a hypothesis in synthesis output."""
+    id: str
+    statement: str
+    confidence: float = Field(ge=0, le=1)
+    model_sources: List[str] = Field(default_factory=list)
+
+
+class InterventionRef(BaseModel):
+    """Structured reference to an intervention in synthesis output."""
+    id: str
+    title: str
+    risk_profile: str
+    regenerative_impact_notes: str
+    score: float = 0.0
+
+
 class AnalysisOutput(BaseModel):
     situation_summary: str
-    evidence_observed: List[str]
-    interpretations_by_lens: List[str]
+    # Typed references preserve traceability from synthesis back to source objects
+    evidence_observed: List[EvidenceRef]
+    interpretations_by_lens: List[HypothesisRef]
     convergence: List[str]
     disagreements: List[str]
     missing_information: List[str]
     confidence_and_uncertainty: Dict[str, str]
-    recommended_interventions: List[str]
+    recommended_interventions: List[InterventionRef]
     risks_and_ethical_cautions: List[str]
     regenerative_assessment: Dict[str, str]
     questions_for_human_validation: List[str]
