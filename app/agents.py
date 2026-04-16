@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from .llm import AGENT_PROMPT_TEMPLATE, call_agent, extract_json
 from .schemas import (
+    ADKARAssessment,
     AnalysisOutput,
     Evidence,
     EvidenceRef,
@@ -24,6 +25,8 @@ from .schemas import (
     HypothesisRef,
     Intervention,
     InterventionRef,
+    ProcessPlan,
+    TheoryUAssessment,
 )
 
 logger = logging.getLogger(__name__)
@@ -536,6 +539,286 @@ def _fallback_evidence(
             },
         )
     ]
+
+
+# ---------------------------------------------------------------------------
+# ADKAR Assessment Agent
+# ---------------------------------------------------------------------------
+
+def adkar_assessment(case_id: str, evidence: list[Evidence]) -> ADKARAssessment:
+    """Score the 5 ADKAR dimensions from evidence and identify the adoption bottleneck."""
+    evidence_text = _fmt_evidence(evidence)
+    prompt = AGENT_PROMPT_TEMPLATE.format(
+        agent_name="ADKAR Assessment Agent",
+        mission=(
+            "Assess change readiness across 5 ADKAR dimensions using evidence. "
+            "Score each dimension 0.0–1.0 representing current observed level. "
+            "Identify the bottleneck (lowest score). Recommend where to focus first."
+        ),
+        inputs=f"Evidence:\n{evidence_text}",
+        output_schema=json.dumps(
+            {
+                "awareness": 0.6,
+                "desire": 0.4,
+                "knowledge": 0.5,
+                "ability": 0.45,
+                "reinforcement": 0.3,
+                "bottleneck": "reinforcement",
+                "recommended_focus": "Narrative explanation of where to invest first",
+                "confidence": 0.65,
+            },
+            indent=2,
+        ),
+    )
+    try:
+        text = call_agent(prompt)
+        data = extract_json(text)
+        return ADKARAssessment(
+            id=f"adkar_{uuid4().hex[:8]}",
+            case_id=case_id,
+            awareness=_clamp(float(data.get("awareness", 0.5))),
+            desire=_clamp(float(data.get("desire", 0.5))),
+            knowledge=_clamp(float(data.get("knowledge", 0.5))),
+            ability=_clamp(float(data.get("ability", 0.5))),
+            reinforcement=_clamp(float(data.get("reinforcement", 0.5))),
+            bottleneck=data.get("bottleneck", "unknown"),
+            recommended_focus=data.get("recommended_focus", ""),
+            evidence_ids=[e.id for e in evidence],
+            confidence=_clamp(float(data.get("confidence", 0.55))),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("adkar_assessment LLM call failed (%s) — using fallback", exc)
+        return _fallback_adkar(case_id, evidence)
+
+
+def _fallback_adkar(case_id: str, evidence: list[Evidence]) -> ADKARAssessment:
+    return ADKARAssessment(
+        id=f"adkar_{uuid4().hex[:8]}",
+        case_id=case_id,
+        awareness=0.5,
+        desire=0.4,
+        knowledge=0.4,
+        ability=0.35,
+        reinforcement=0.3,
+        bottleneck="reinforcement",
+        recommended_focus="LLM unavailable — review reinforcement mechanisms with stakeholders.",
+        evidence_ids=[e.id for e in evidence],
+        confidence=0.40,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Theory U Assessment Agent
+# ---------------------------------------------------------------------------
+
+def theory_u_assessment(case_id: str, evidence: list[Evidence]) -> TheoryUAssessment:
+    """Map the change journey to the Theory U phases and identify movement blockers."""
+    evidence_text = _fmt_evidence(evidence)
+    prompt = AGENT_PROMPT_TEMPLATE.format(
+        agent_name="Theory U Assessment Agent",
+        mission=(
+            "Map evidence to the Theory U journey (downloading → seeing → sensing → "
+            "presencing → crystallizing → prototyping → performing). "
+            "Identify the current phase the organisation is in. "
+            "List blockers preventing deeper movement into the U. "
+            "Suggest specific practices to unblock movement. "
+            "Assess the overall social field quality."
+        ),
+        inputs=f"Evidence:\n{evidence_text}",
+        output_schema=json.dumps(
+            {
+                "current_phase": "downloading|seeing|sensing|presencing|crystallizing|prototyping|performing",
+                "blockers": ["List of blockers preventing movement"],
+                "entry_points": ["Specific practices to try"],
+                "social_field_quality": "Observation on collective intelligence health",
+                "confidence": 0.60,
+            },
+            indent=2,
+        ),
+    )
+    try:
+        text = call_agent(prompt)
+        data = extract_json(text)
+        return TheoryUAssessment(
+            id=f"theoryu_{uuid4().hex[:8]}",
+            case_id=case_id,
+            current_phase=data.get("current_phase", "downloading"),
+            blockers=data.get("blockers", []),
+            entry_points=data.get("entry_points", []),
+            social_field_quality=data.get("social_field_quality", ""),
+            evidence_ids=[e.id for e in evidence],
+            confidence=_clamp(float(data.get("confidence", 0.55))),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("theory_u_assessment LLM call failed (%s) — using fallback", exc)
+        return _fallback_theory_u(case_id, evidence)
+
+
+def _fallback_theory_u(case_id: str, evidence: list[Evidence]) -> TheoryUAssessment:
+    return TheoryUAssessment(
+        id=f"theoryu_{uuid4().hex[:8]}",
+        case_id=case_id,
+        current_phase="downloading",
+        blockers=["LLM unavailable — blockers require human assessment"],
+        entry_points=["Conduct listening circles", "Run future-back visioning session"],
+        social_field_quality="Unable to assess without LLM — review evidence manually.",
+        evidence_ids=[e.id for e in evidence],
+        confidence=0.40,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Regenerative Governance Assessment Agent
+# ---------------------------------------------------------------------------
+
+def regenerative_governance_assessment(
+    case_id: str,
+    hypotheses: list[Hypothesis],
+    interventions: list[Intervention],
+) -> dict:
+    """Assess interventions against Antifragility, Biomimicry, and Flow principles."""
+    hyp_text = "\n".join(f"[{h.id}]: {h.statement}" for h in hypotheses)
+    int_text = "\n".join(
+        f"[{i.id}] {i.title}: {i.intended_outcome}" for i in interventions
+    )
+    prompt = AGENT_PROMPT_TEMPLATE.format(
+        agent_name="Regenerative Governance Agent",
+        mission=(
+            "Assess proposed interventions against three regenerative lenses:\n"
+            "1. Antifragility: Do they build capability from disorder? "
+            "Are they brittle under stress?\n"
+            "2. Biomimicry: Do they use feedback loops, diversity, redundancy? "
+            "Are they extractive or regenerative in design?\n"
+            "3. Flow: Do they create conditions for optimal engagement? "
+            "Do they reduce friction or create new friction?\n"
+            "Score each lens 0.0–1.0. Provide key insights and risks."
+        ),
+        inputs=f"Hypotheses:\n{hyp_text}\n\nInterventions:\n{int_text}",
+        output_schema=json.dumps(
+            {
+                "antifragility_score": 0.65,
+                "biomimicry_score": 0.55,
+                "flow_score": 0.70,
+                "overall_regenerative_score": 0.63,
+                "insights": ["Key regenerative strengths"],
+                "risks": ["Regenerative risks or extractive tendencies"],
+            },
+            indent=2,
+        ),
+    )
+    try:
+        text = call_agent(prompt)
+        data = extract_json(text)
+        return {
+            "antifragility_score": _clamp(float(data.get("antifragility_score", 0.5))),
+            "biomimicry_score": _clamp(float(data.get("biomimicry_score", 0.5))),
+            "flow_score": _clamp(float(data.get("flow_score", 0.5))),
+            "overall_regenerative_score": _clamp(float(data.get("overall_regenerative_score", 0.5))),
+            "insights": data.get("insights", []),
+            "risks": data.get("risks", []),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("regenerative_governance_assessment failed (%s) — using fallback", exc)
+        return {
+            "antifragility_score": 0.40,
+            "biomimicry_score": 0.40,
+            "flow_score": 0.40,
+            "overall_regenerative_score": 0.40,
+            "insights": ["LLM unavailable — regenerative assessment requires human review"],
+            "risks": ["Cannot assess without LLM output"],
+        }
+
+
+# ---------------------------------------------------------------------------
+# Process Guidance Agent
+# ---------------------------------------------------------------------------
+
+def process_guidance(
+    case_id: str,
+    hypotheses: list[Hypothesis],
+    interventions: list[Intervention],
+    adkar: ADKARAssessment,
+    theory_u: TheoryUAssessment,
+) -> ProcessPlan:
+    """Synthesise all assessments into a phased, sequenced process plan."""
+    hyp_text = "\n".join(f"[{h.id}]: {h.statement}" for h in hypotheses)
+    int_text = "\n".join(
+        f"[{i.id}] stage={i.adkar_stage or '?'} score={i.score:.2f}: {i.title}"
+        for i in interventions
+    )
+    prompt = AGENT_PROMPT_TEMPLATE.format(
+        agent_name="Process Guidance Agent",
+        mission=(
+            "Synthesise all diagnostic outputs into a phased process plan. "
+            "Sequence interventions using ADKAR logic (address the bottleneck first) "
+            "and Theory U phase. Output 3-5 concrete phases, each with: "
+            "phase name, objective, key activities, duration in weeks, success indicators."
+        ),
+        inputs=(
+            f"Hypotheses:\n{hyp_text}\n\n"
+            f"Interventions (ranked):\n{int_text}\n\n"
+            f"ADKAR bottleneck: {adkar.bottleneck} (confidence={adkar.confidence:.2f})\n"
+            f"Theory U phase: {theory_u.current_phase} (confidence={theory_u.confidence:.2f})\n"
+            f"Theory U blockers: {theory_u.blockers}"
+        ),
+        output_schema=json.dumps(
+            {
+                "phases": [
+                    {
+                        "phase": "Phase name",
+                        "objective": "What this phase achieves",
+                        "activities": ["Key activities"],
+                        "duration_weeks": 4,
+                        "success_indicators": ["Observable signs of completion"],
+                    }
+                ],
+                "total_duration_weeks": 12,
+                "key_risks": ["Critical risks to the plan"],
+            },
+            indent=2,
+        ),
+    )
+    try:
+        text = call_agent(prompt, max_tokens=3000)
+        data = extract_json(text)
+        return ProcessPlan(
+            id=f"plan_{uuid4().hex[:8]}",
+            case_id=case_id,
+            phases=data.get("phases", []),
+            total_duration_weeks=int(data.get("total_duration_weeks", 0)),
+            key_risks=data.get("key_risks", []),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("process_guidance LLM call failed (%s) — using fallback", exc)
+        return ProcessPlan(
+            id=f"plan_{uuid4().hex[:8]}",
+            case_id=case_id,
+            phases=[
+                {
+                    "phase": "Stabilise",
+                    "objective": "Address immediate friction and build psychological safety",
+                    "activities": ["Stakeholder listening sessions", "Decision-rights mapping"],
+                    "duration_weeks": 4,
+                    "success_indicators": ["Reduced escalation rate"],
+                },
+                {
+                    "phase": "Redesign",
+                    "objective": "Co-design structural and process changes",
+                    "activities": ["Cross-functional design sprint", "Pilot experiment"],
+                    "duration_weeks": 6,
+                    "success_indicators": ["Prototype tested", "Stakeholder buy-in confirmed"],
+                },
+                {
+                    "phase": "Embed",
+                    "objective": "Institutionalise changes and build capability",
+                    "activities": ["Training", "Practice circles", "Metrics review"],
+                    "duration_weeks": 8,
+                    "success_indicators": ["Behaviour change observable at 60 days"],
+                },
+            ],
+            total_duration_weeks=18,
+            key_risks=["LLM unavailable — process plan is a generic template, requires customisation"],
+        )
 
 
 def _fallback_synthesis(

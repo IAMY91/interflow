@@ -10,7 +10,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth import Role, require_roles
+from .model_seeds import seed_default_models
 from .schemas import (
+    ADKARAssessment,
     AuditLog,
     Case,
     CaseStatus,
@@ -18,7 +20,9 @@ from .schemas import (
     ModelRegistryEntry,
     OutcomeObservation,
     PatternMemory,
+    ProcessPlan,
     Stakeholder,
+    TheoryUAssessment,
     ValidationRecord,
 )
 from .store import InMemoryStore
@@ -268,3 +272,127 @@ def bootstrap_case(_: Role = Depends(require_roles(Role.admin, Role.practitioner
     store.save_case(case)
 
     return {"case": case, "stakeholder": st}
+
+
+# ---------------------------------------------------------------------------
+# New OD dashboard endpoints
+# ---------------------------------------------------------------------------
+
+@app.post("/seed-defaults")
+def seed_defaults(_: Role = Depends(require_roles(Role.admin))) -> dict:
+    """Seed the model registry with default entries for all 9 meta-models."""
+    models = seed_default_models(store)
+    return {"seeded": [m.name for m in models], "count": len(models)}
+
+
+@app.get("/patterns", response_model=List[PatternMemory])
+def list_patterns(
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor)),
+) -> List[PatternMemory]:
+    return list(store.pattern_memory.values())
+
+
+@app.get("/cases/{case_id}/metrics")
+def get_case_metrics(
+    case_id: str,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor)),
+) -> dict:
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    idx = store.case_index[case_id]
+    case = store.cases[case_id]
+    audit_ids = idx.get("audit", [])
+    violation_count = sum(
+        1 for aid in audit_ids
+        if aid in store.audit_logs and "needs_review" in store.audit_logs[aid].policy_results.values()
+    )
+    return {
+        "case_id": case_id,
+        "status": case.status,
+        "evidence_count": len(idx.get("evidence", [])),
+        "hypothesis_count": len(idx.get("hypotheses", [])),
+        "intervention_count": len(idx.get("interventions", [])),
+        "workflow_runs": len(audit_ids),
+        "policy_violations": violation_count,
+        "validation_count": len(idx.get("validations", [])),
+        "outcome_count": len(idx.get("outcomes", [])),
+    }
+
+
+@app.get("/cases/{case_id}/adkar", response_model=ADKARAssessment)
+def get_adkar(
+    case_id: str,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor)),
+) -> ADKARAssessment:
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    result = store.adkar_assessments.get(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="ADKAR assessment not yet run — run the workflow first")
+    return result
+
+
+@app.get("/cases/{case_id}/theory-u", response_model=TheoryUAssessment)
+def get_theory_u(
+    case_id: str,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor)),
+) -> TheoryUAssessment:
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    result = store.theory_u_assessments.get(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Theory U assessment not yet run — run the workflow first")
+    return result
+
+
+@app.get("/cases/{case_id}/process-plan", response_model=ProcessPlan)
+def get_process_plan(
+    case_id: str,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner, Role.reviewer, Role.auditor)),
+) -> ProcessPlan:
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    result = store.process_plans.get(case_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Process plan not yet generated — run the workflow first")
+    return result
+
+
+class CaseUpdatePayload(BaseModel):
+    title: str | None = None
+    context_summary: str | None = None
+    goals: List[str] | None = None
+    domain: str | None = None
+    sponsor: str | None = None
+    sensitivity_level: str | None = None
+    constraints: List[str] | None = None
+    timeline_weeks: int | None = None
+
+
+@app.put("/cases/{case_id}", response_model=Case)
+def update_case(
+    case_id: str,
+    payload: CaseUpdatePayload,
+    _: Role = Depends(require_roles(Role.admin, Role.practitioner)),
+) -> Case:
+    if case_id not in store.cases:
+        raise HTTPException(status_code=404, detail="case not found")
+    case = store.cases[case_id]
+    if payload.title is not None:
+        case.title = payload.title
+    if payload.context_summary is not None:
+        case.context_summary = payload.context_summary
+    if payload.goals is not None:
+        case.goals = payload.goals
+    if payload.domain is not None:
+        case.domain = payload.domain
+    if payload.sponsor is not None:
+        case.sponsor = payload.sponsor
+    if payload.sensitivity_level is not None:
+        case.sensitivity_level = payload.sensitivity_level
+    if payload.constraints is not None:
+        case.constraints = payload.constraints
+    if payload.timeline_weeks is not None:
+        case.timeline_weeks = payload.timeline_weeks
+    store.save_case(case)
+    return case

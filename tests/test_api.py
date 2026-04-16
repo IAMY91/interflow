@@ -233,3 +233,96 @@ class TestBootstrap:
         assert "case" in data
         assert "stakeholder" in data
         assert data["case"]["title"] == "Cross-functional decision friction"
+
+
+# ---------------------------------------------------------------------------
+# New OD dashboard endpoint tests
+# ---------------------------------------------------------------------------
+
+class TestSeedDefaults:
+    def test_seed_defaults_populates_registry(self, client, admin_h):
+        resp = client.post("/seed-defaults", headers=admin_h)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 9
+        assert "AQAL" in data["seeded"]
+        assert "ADKAR" in data["seeded"]
+        # Verify they appear in /models
+        models_resp = client.get("/models", headers=admin_h)
+        assert models_resp.status_code == 200
+        names = [m["name"] for m in models_resp.json()]
+        for expected in ["AQAL", "Spiral Dynamics", "Theory U", "ADKAR", "Cynefin", "VSM", "Antifragility", "Biomimicry", "Flow"]:
+            assert expected in names
+
+    def test_seed_defaults_requires_admin(self, client, practitioner_h):
+        resp = client.post("/seed-defaults", headers=practitioner_h)
+        assert resp.status_code == 403
+
+
+class TestGetPatterns:
+    def test_get_patterns_returns_empty_list(self, client, admin_h):
+        resp = client.get("/patterns", headers=admin_h)
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    def test_get_patterns_returns_saved_pattern(self, client, admin_h):
+        pattern = {
+            "id": "pat_001",
+            "pattern_type": "recurring_tension",
+            "pattern_signature": "clarity_ownership_gap",
+            "supporting_case_ids": [],
+            "associated_lenses": ["AQAL"],
+            "confidence": 0.7,
+            "outcome_summary": "Observed in 3 similar cases.",
+        }
+        resp = client.post("/patterns", json=pattern, headers=admin_h)
+        assert resp.status_code == 200
+        resp2 = client.get("/patterns", headers=admin_h)
+        assert len(resp2.json()) == 1
+        assert resp2.json()[0]["id"] == "pat_001"
+
+
+class TestPutCase:
+    def test_put_case_updates_domain(self, client, admin_h):
+        resp = client.post(
+            "/cases",
+            json={"id": "case_put1", "title": "T", "context_summary": "C"},
+            headers=admin_h,
+        )
+        assert resp.status_code == 200
+        update_resp = client.put(
+            "/cases/case_put1",
+            json={"domain": "culture", "timeline_weeks": 12},
+            headers=admin_h,
+        )
+        assert update_resp.status_code == 200
+        data = update_resp.json()
+        assert data["domain"] == "culture"
+        assert data["timeline_weeks"] == 12
+        # Verify persisted
+        get_resp = client.get("/cases", headers=admin_h)
+        cases = {c["id"]: c for c in get_resp.json()}
+        assert cases["case_put1"]["domain"] == "culture"
+
+    def test_put_case_404_on_missing(self, client, admin_h):
+        resp = client.put("/cases/no_such", json={"domain": "x"}, headers=admin_h)
+        assert resp.status_code == 404
+
+
+class TestPerCaseMetrics:
+    def test_per_case_metrics_returns_expected_keys(self, client, admin_h):
+        client.post(
+            "/cases",
+            json={"id": "case_metrics1", "title": "M", "context_summary": "MC"},
+            headers=admin_h,
+        )
+        resp = client.get("/cases/case_metrics1/metrics", headers=admin_h)
+        assert resp.status_code == 200
+        data = resp.json()
+        for key in ["case_id", "status", "evidence_count", "hypothesis_count",
+                    "intervention_count", "workflow_runs", "policy_violations"]:
+            assert key in data
+
+    def test_per_case_metrics_404_on_missing(self, client, admin_h):
+        resp = client.get("/cases/no_case_here/metrics", headers=admin_h)
+        assert resp.status_code == 404

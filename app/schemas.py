@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CaseStatus(str, Enum):
@@ -39,6 +39,12 @@ class Case(BaseModel):
     intervention_ids: List[str] = Field(default_factory=list)
     unresolved_questions: List[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    # Extended OD dashboard fields
+    domain: str = ""
+    sponsor: str = ""
+    sensitivity_level: str = "standard"
+    constraints: List[str] = Field(default_factory=list)
+    timeline_weeks: int = 0
 
 
 class Stakeholder(BaseModel):
@@ -78,14 +84,24 @@ class Hypothesis(BaseModel):
 
 class ModelRegistryEntry(BaseModel):
     name: str
-    category: str
-    purpose: str
+    version: str = "1.0"
+    description: str = ""
+    category: str = ""
+    purpose: str = ""
     allowed_uses: List[str] = Field(default_factory=list)
     disallowed_uses: List[str] = Field(default_factory=list)
-    min_evidence_requirements: Dict[str, int] = Field(default_factory=dict)
-    confidence_rules: List[str] = Field(default_factory=list)
+    min_evidence_requirements: Dict[str, Any] = Field(default_factory=dict)
+    confidence_rules: Dict[str, Any] = Field(default_factory=dict)
     known_failure_modes: List[str] = Field(default_factory=list)
     ethical_risks: List[str] = Field(default_factory=list)
+
+    @field_validator("confidence_rules", mode="before")
+    @classmethod
+    def coerce_confidence_rules(cls, v: Any) -> Dict[str, Any]:
+        """Accept legacy List[str] format from old DB rows and convert to dict."""
+        if isinstance(v, list):
+            return {item: True for item in v}
+        return v if isinstance(v, dict) else {}
 
 
 class Intervention(BaseModel):
@@ -107,6 +123,10 @@ class Intervention(BaseModel):
     evidence_strength: float = Field(default=0.5, ge=0, le=1)
     regenerative_fit: float = Field(default=0.5, ge=0, le=1)
     score: float = Field(default=0.0)  # computed by workflow
+    # ADKAR + sequencing fields
+    adkar_stage: str = ""
+    sequencing_order: int = 0
+    time_to_value_weeks: int = 0
 
     def compute_score(self) -> float:
         """Ranking formula from README §8.3.
@@ -213,3 +233,43 @@ class AnalysisOutput(BaseModel):
     risks_and_ethical_cautions: List[str]
     regenerative_assessment: Dict[str, str]
     questions_for_human_validation: List[str]
+
+
+# ---------------------------------------------------------------------------
+# Extended OD assessment schemas
+# ---------------------------------------------------------------------------
+
+class ADKARAssessment(BaseModel):
+    id: str
+    case_id: str
+    awareness: float = Field(default=0.5, ge=0, le=1)
+    desire: float = Field(default=0.5, ge=0, le=1)
+    knowledge: float = Field(default=0.5, ge=0, le=1)
+    ability: float = Field(default=0.5, ge=0, le=1)
+    reinforcement: float = Field(default=0.5, ge=0, le=1)
+    bottleneck: str = ""
+    recommended_focus: str = ""
+    evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    created_at: str = ""
+
+
+class TheoryUAssessment(BaseModel):
+    id: str
+    case_id: str
+    current_phase: str = "downloading"
+    blockers: List[str] = Field(default_factory=list)
+    entry_points: List[str] = Field(default_factory=list)
+    social_field_quality: str = ""
+    evidence_ids: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    created_at: str = ""
+
+
+class ProcessPlan(BaseModel):
+    id: str
+    case_id: str
+    phases: List[Dict[str, Any]] = Field(default_factory=list)
+    total_duration_weeks: int = 0
+    key_risks: List[str] = Field(default_factory=list)
+    created_at: str = ""

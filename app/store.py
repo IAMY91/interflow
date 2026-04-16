@@ -5,6 +5,7 @@ from typing import Dict, List
 
 from .db import SQLiteStore
 from .schemas import (
+    ADKARAssessment,
     AuditLog,
     Case,
     Evidence,
@@ -12,7 +13,9 @@ from .schemas import (
     Intervention,
     ModelRegistryEntry,
     PatternMemory,
+    ProcessPlan,
     Stakeholder,
+    TheoryUAssessment,
     ValidationRecord,
     OutcomeObservation,
 )
@@ -31,6 +34,10 @@ class InMemoryStore:
         self.pattern_memory: Dict[str, PatternMemory] = {}
         self.outcomes: Dict[str, OutcomeObservation] = {}
         self.model_registry: Dict[str, ModelRegistryEntry] = {}
+        self.adkar_assessments: Dict[str, ADKARAssessment] = {}
+        self.theory_u_assessments: Dict[str, TheoryUAssessment] = {}
+        self.regen_assessments: Dict[str, dict] = {}
+        self.process_plans: Dict[str, ProcessPlan] = {}
         self.case_index = defaultdict(lambda: {
             "stakeholders": [], "evidence": [], "hypotheses": [], "interventions": [], "validations": [], "audit": [], "outcomes": []
         })
@@ -74,6 +81,15 @@ class InMemoryStore:
             o = OutcomeObservation(**raw)
             self.outcomes[o.id] = o
             self.link(o.case_id, "outcomes", o.id)
+        for raw in self.db.list_namespace("adkar"):
+            a = ADKARAssessment(**raw)
+            self.adkar_assessments[a.case_id] = a
+        for raw in self.db.list_namespace("theory_u"):
+            t = TheoryUAssessment(**raw)
+            self.theory_u_assessments[t.case_id] = t
+        for raw in self.db.list_namespace("process_plans"):
+            p = ProcessPlan(**raw)
+            self.process_plans[p.case_id] = p
 
     def link(self, case_id: str, collection: str, object_id: str) -> None:
         if object_id not in self.case_index[case_id][collection]:
@@ -125,6 +141,22 @@ class InMemoryStore:
         self.outcomes[outcome.id] = outcome
         self.link(outcome.case_id, "outcomes", outcome.id)
         self.db.upsert("outcomes", outcome.id, outcome.model_dump(mode="json"), outcome.case_id)
+
+    def save_adkar(self, assessment: ADKARAssessment) -> None:
+        self.adkar_assessments[assessment.case_id] = assessment
+        self.db.upsert("adkar", assessment.id, assessment.model_dump(mode="json"), assessment.case_id)
+
+    def save_theory_u(self, assessment: TheoryUAssessment) -> None:
+        self.theory_u_assessments[assessment.case_id] = assessment
+        self.db.upsert("theory_u", assessment.id, assessment.model_dump(mode="json"), assessment.case_id)
+
+    def save_regen_assessment(self, case_id: str, data: dict) -> None:
+        self.regen_assessments[case_id] = data
+        self.db.upsert("regen", case_id, data, case_id)
+
+    def save_process_plan(self, plan: ProcessPlan) -> None:
+        self.process_plans[plan.case_id] = plan
+        self.db.upsert("process_plans", plan.id, plan.model_dump(mode="json"), plan.case_id)
 
     def get_case_bundle(self, case_id: str) -> Dict[str, List[dict]]:
         idx = self.case_index[case_id]

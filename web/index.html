@@ -1,644 +1,822 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Interflow</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg: #f5f5f4; --surface: #fff; --border: #e2e2e0;
-      --text: #1c1917; --muted: #78716c;
-      --accent: #0f766e; --accent-light: #ccfbf1;
-      --danger: #dc2626; --warn: #d97706; --ok: #16a34a;
-      --font: system-ui, -apple-system, sans-serif;
-      --radius: 6px; --shadow: 0 1px 3px rgba(0,0,0,.08);
-    }
-    body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
-
-    /* Nav */
-    nav { display:flex; align-items:center; gap:.75rem; padding:.6rem 1.25rem;
-      background:var(--text); color:#fff; position:sticky; top:0; z-index:100; }
-    .logo { font-weight:700; font-size:1.05rem; flex:1; }
-    .logo span { color:#5eead4; }
-    .nav-btn { background:transparent; border:1px solid #444; color:#ccc;
-      padding:.3rem .75rem; border-radius:var(--radius); cursor:pointer; font-size:.82rem; }
-    .nav-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
-    .nav-btn:hover:not(.active) { border-color:#888; color:#fff; }
-    nav select { background:#2a2a2a; color:#ccc; border:1px solid #444;
-      border-radius:var(--radius); padding:.25rem .4rem; font-size:.78rem; }
-
-    /* Layout */
-    .view { display:none; }
-    .view.active { display:flex; }
-    #dashboard { height:calc(100vh - 41px); }
-
-    /* Sidebar */
-    .sidebar { width:230px; min-width:230px; background:var(--surface);
-      border-right:1px solid var(--border); display:flex; flex-direction:column; overflow:hidden; }
-    .sidebar-header { padding:.6rem .9rem; border-bottom:1px solid var(--border);
-      font-weight:600; font-size:.75rem; text-transform:uppercase; letter-spacing:.05em;
-      color:var(--muted); display:flex; align-items:center; justify-content:space-between; }
-    .sidebar-body { flex:1; overflow-y:auto; }
-    .case-item { padding:.55rem .9rem; cursor:pointer; border-bottom:1px solid var(--border);
-      display:flex; align-items:center; gap:.4rem; }
-    .case-item:hover { background:var(--bg); }
-    .case-item.selected { background:var(--accent-light); }
-    .case-item .ci-title { font-size:.82rem; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .sidebar-footer { padding:.65rem .9rem; border-top:1px solid var(--border); }
-
-    /* Main panel */
-    .main { flex:1; overflow-y:auto; display:flex; flex-direction:column; }
-    .empty-state { flex:1; display:flex; flex-direction:column;
-      align-items:center; justify-content:center; color:var(--muted); gap:.4rem; }
-
-    /* Case header */
-    .case-header { padding:1rem 1.25rem; border-bottom:1px solid var(--border); background:var(--surface); }
-    .case-header h2 { font-size:1rem; margin-bottom:.25rem; }
-    .case-meta { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-bottom:.4rem; }
-    .case-summary { font-size:.82rem; color:var(--muted); margin-bottom:.4rem; }
-    .case-actions { display:flex; gap:.4rem; flex-wrap:wrap; margin-top:.5rem; }
-
-    /* Tabs */
-    .tabs { display:flex; border-bottom:1px solid var(--border);
-      background:var(--surface); padding:0 1.25rem; overflow-x:auto; }
-    .tab-btn { padding:.5rem .85rem; background:none; border:none;
-      border-bottom:2px solid transparent; cursor:pointer; font-size:.82rem;
-      color:var(--muted); white-space:nowrap; }
-    .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
-    .tab-btn:hover:not(.active) { color:var(--text); }
-    .tab-content { padding:1rem 1.25rem; flex:1; }
-    .tab-pane { display:none; }
-    .tab-pane.active { display:block; }
-
-    /* Cards */
-    .card { background:var(--surface); border:1px solid var(--border);
-      border-radius:var(--radius); padding:.9rem; margin-bottom:.65rem; box-shadow:var(--shadow); }
-    .card h4 { font-size:.88rem; margin-bottom:.4rem; }
-
-    /* Metrics */
-    .metrics { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:.9rem; }
-    .metric { background:var(--surface); border:1px solid var(--border);
-      border-radius:var(--radius); padding:.5rem .85rem; flex:1; min-width:90px; }
-    .metric .num { font-size:1.4rem; font-weight:700; color:var(--accent); }
-    .metric .label { font-size:.72rem; color:var(--muted); }
-
-    /* Confidence bar */
-    .conf-row { margin:.3rem 0; }
-    .conf-label { display:flex; justify-content:space-between; font-size:.75rem; color:var(--muted); margin-bottom:2px; }
-    .bar-track { height:5px; background:var(--border); border-radius:3px; }
-    .bar-fill { height:100%; border-radius:3px; background:var(--accent); }
-    .bar-fill.warn { background:var(--warn); }
-    .bar-fill.danger { background:var(--danger); }
-
-    /* Badges */
-    .badge { display:inline-block; padding:.12rem .45rem; border-radius:100px;
-      font-size:.7rem; font-weight:600; letter-spacing:.02em; }
-    .badge-intake    { background:#f0f0ef; color:#666; }
-    .badge-evidence  { background:#dbeafe; color:#1e40af; }
-    .badge-interpretation { background:#fef3c7; color:#92400e; }
-    .badge-synthesis { background:#f3e8ff; color:#6b21a8; }
-    .badge-intervention { background:#ccfbf1; color:#065f46; }
-    .badge-governance_review { background:#fee2e2; color:#991b1b; }
-    .badge-human_validation { background:#fef9c3; color:#713f12; }
-    .badge-active    { background:#dcfce7; color:#14532d; }
-    .badge-closed    { background:#f1f5f9; color:#475569; }
-    .badge-low    { background:#dcfce7; color:#14532d; }
-    .badge-medium { background:#fef9c3; color:#713f12; }
-    .badge-high   { background:#fee2e2; color:#991b1b; }
-
-    /* Pills */
-    .pills { display:flex; flex-wrap:wrap; gap:.25rem; margin-top:.25rem; }
-    .pill { background:var(--bg); border:1px solid var(--border); border-radius:100px;
-      padding:.08rem .45rem; font-size:.72rem; color:var(--muted); }
-
-    /* Buttons */
-    .btn { display:inline-flex; align-items:center; gap:.25rem; padding:.35rem .75rem;
-      border-radius:var(--radius); cursor:pointer; font-size:.8rem;
-      border:1px solid var(--border); background:var(--surface); color:var(--text); }
-    .btn:hover { background:var(--bg); }
-    .btn:disabled { opacity:.4; cursor:default; }
-    .btn-primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-    .btn-primary:hover { background:#0d6560; }
-    .btn-danger  { background:var(--danger); color:#fff; border-color:var(--danger); }
-    .btn-danger:hover  { background:#b91c1c; }
-    .btn-warn    { background:var(--warn); color:#fff; border-color:var(--warn); }
-    .btn-warn:hover    { background:#b45309; }
-    .btn-sm { padding:.2rem .5rem; font-size:.74rem; }
-
-    /* Validation view */
-    #validation { flex-direction:column; padding:1rem 1.25rem; overflow-y:auto; height:calc(100vh - 41px); }
-    .val-hdr { margin-bottom:.85rem; }
-    .val-hdr h2 { font-size:1rem; margin-bottom:.15rem; }
-    .val-hdr p { font-size:.82rem; color:var(--muted); }
-    .val-case { background:var(--surface); border:1px solid var(--border);
-      border-radius:var(--radius); margin-bottom:.85rem; }
-    .val-case-hdr { padding:.65rem .9rem; border-bottom:1px solid var(--border);
-      display:flex; align-items:center; gap:.6rem; }
-    .val-case-hdr h3 { font-size:.9rem; flex:1; }
-    .val-item { padding:.85rem .9rem; border-bottom:1px solid var(--border); }
-    .val-item:last-child { border-bottom:none; }
-    .val-item-hdr { display:flex; align-items:center; gap:.5rem; margin-bottom:.4rem; }
-    .val-type { font-size:.7rem; font-weight:700; text-transform:uppercase; color:var(--muted); }
-    .val-body { font-size:.85rem; line-height:1.6; margin-bottom:.6rem; }
-    .val-alts { font-size:.78rem; color:var(--muted); margin-bottom:.5rem; }
-    .val-actions { display:flex; gap:.35rem; flex-wrap:wrap; align-items:center; }
-    .val-rationale { flex:1; min-width:160px; padding:.3rem .5rem;
-      border:1px solid var(--border); border-radius:var(--radius); font-size:.8rem; }
-
-    /* Ingest form */
-    .ingest-form { background:var(--surface); border:1px solid var(--border);
-      border-radius:var(--radius); padding:.9rem; margin-bottom:.85rem; }
-    .ingest-form h4 { font-size:.85rem; margin-bottom:.6rem; }
-    .form-row { display:flex; gap:.4rem; margin-bottom:.4rem; }
-    .form-row > * { flex:1; }
-    .ingest-form input, .ingest-form textarea, .ingest-form select {
-      width:100%; padding:.35rem .5rem; border:1px solid var(--border);
-      border-radius:var(--radius); font-size:.8rem; font-family:var(--font); background:var(--surface); }
-    .ingest-form textarea { resize:vertical; min-height:80px; margin-bottom:.4rem; }
-
-    /* Toast */
-    #toast { position:fixed; bottom:1.25rem; right:1.25rem; background:var(--text); color:#fff;
-      padding:.5rem .9rem; border-radius:var(--radius); font-size:.82rem;
-      opacity:0; pointer-events:none; transition:opacity .2s; max-width:300px; z-index:999; }
-    #toast.show { opacity:1; }
-
-    /* Spinner / job */
-    .spinner { display:inline-block; width:13px; height:13px; border:2px solid currentColor;
-      border-top-color:transparent; border-radius:50%; animation:spin .6s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .job-row { display:flex; align-items:center; gap:.4rem; font-size:.78rem;
-      color:var(--muted); margin-top:.4rem; }
-
-    /* AQAL grid */
-    .aqal-grid { display:grid; grid-template-columns:1fr 1fr; gap:.4rem; margin:.4rem 0; }
-    .aqal-cell { background:var(--bg); border:1px solid var(--border);
-      border-radius:var(--radius); padding:.5rem .7rem; }
-    .aqal-q { font-size:.72rem; font-weight:700; color:var(--muted); }
-    .aqal-count { font-size:1.2rem; font-weight:700; color:var(--accent); }
-    .aqal-missing { color:var(--danger); font-size:.72rem; }
-
-    /* Warn banner */
-    .warn-banner { background:#fef9c3; border:1px solid #fde047; border-radius:var(--radius);
-      padding:.6rem .85rem; font-size:.82rem; margin-top:.75rem; }
-
-    /* Reg warning */
-    .reg-warn { background:#fff7ed; border:1px solid #fed7aa; border-radius:var(--radius);
-      padding:.4rem .7rem; font-size:.78rem; color:#92400e; margin:.3rem 0; }
-
-    .section-title { font-size:.72rem; font-weight:700; text-transform:uppercase;
-      letter-spacing:.06em; color:var(--muted); margin:.7rem 0 .4rem; }
-
-    pre.json { background:#1c1917; color:#d8ffd8; padding:.85rem; border-radius:var(--radius);
-      overflow:auto; font-size:.76rem; line-height:1.5; }
-
-    .score-grid { display:grid; grid-template-columns:1fr 1fr; gap:.2rem; margin-top:.4rem; }
-  </style>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Interflow — OD Dashboard</title>
+<style>
+:root{--bg:#0f1117;--surface:#1a1d27;--surface2:#222636;--surface3:#2a2f45;--border:#2e3452;--text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;--accent:#6366f1;--accent2:#818cf8;--success:#22c55e;--warn:#f59e0b;--danger:#ef4444;--info:#38bdf8;--r:8px;--r2:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;font-size:14px;display:flex;min-height:100vh}
+nav{width:220px;min-height:100vh;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:16px 0;flex-shrink:0}
+.nav-brand{padding:0 16px 16px;font-size:16px;font-weight:700;color:var(--text);border-bottom:1px solid var(--border);margin-bottom:8px}
+.nav-brand span{color:var(--accent2)}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;color:var(--text2);transition:background .15s,color .15s;font-size:13px}
+.nav-item:hover{background:var(--surface2);color:var(--text)}
+.nav-item.active{background:var(--surface3);color:var(--accent2);font-weight:600}
+.nav-sep{height:1px;background:var(--border);margin:8px 16px}
+.nav-role{padding:8px 16px;margin-top:auto;border-top:1px solid var(--border)}
+.nav-role label{font-size:11px;color:var(--text3);display:block;margin-bottom:4px}
+.nav-role select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:var(--r);font-size:12px}
+main{flex:1;overflow-y:auto;display:flex;flex-direction:column;min-width:0}
+.topbar{padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.topbar h1{font-size:15px;font-weight:600}
+.topbar .spacer{flex:1}
+.page{padding:24px;max-width:1200px;width:100%}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-bottom:16px}
+.card-title{font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:14px}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.stat{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.stat .lbl{font-size:11px;color:var(--text3);margin-bottom:4px}
+.stat .val{font-size:22px;font-weight:700;color:var(--text)}
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge-intake{background:#1e293b;color:#94a3b8}.badge-evidence{background:#1e3a5f;color:#60a5fa}
+.badge-interpretation{background:#1e3658;color:#818cf8}.badge-synthesis{background:#1e3058;color:#a78bfa}
+.badge-intervention{background:#1e3a4f;color:#34d399}.badge-governance_review{background:#3f2d13;color:#f59e0b}
+.badge-human_validation{background:#451a1a;color:#f87171}.badge-active{background:#14532d;color:#4ade80}
+.badge-closed{background:#1a1a2e;color:#64748b}.badge-low{background:#14532d;color:#4ade80}
+.badge-medium{background:#3f2d13;color:#f59e0b}.badge-high{background:#451a1a;color:#f87171}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);border:none;cursor:pointer;font-size:13px;font-weight:500;transition:opacity .15s}
+.btn:hover{opacity:.85}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-primary{background:var(--accent);color:#fff}.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-danger{background:var(--danger);color:#fff}.btn-success{background:var(--success);color:#fff}
+.btn-sm{padding:4px 10px;font-size:12px}.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 10px;color:var(--text3);font-weight:500;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}tr:hover td{background:var(--surface2)}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px;font-weight:500}
+input,textarea,select{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:var(--r);font-size:13px;font-family:inherit}
+input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent)}
+textarea{resize:vertical;min-height:80px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.bar-wrap{background:var(--surface3);border-radius:4px;height:8px;overflow:hidden;flex:1}
+.bar-fill{height:100%;border-radius:4px;transition:width .4s}
+.bar-fill.green{background:var(--success)}.bar-fill.amber{background:var(--warn)}.bar-fill.red{background:var(--danger)}.bar-fill.blue{background:var(--info)}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.bar-label{font-size:12px;color:var(--text2);width:120px;flex-shrink:0}
+.bar-val{font-size:12px;color:var(--text3);width:38px;text-align:right;flex-shrink:0}
+.aqal-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px;border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.aqal-cell{padding:14px;background:var(--surface2);min-height:90px}
+.aqal-cell .q-label{font-size:11px;font-weight:700;color:var(--text3);margin-bottom:4px}
+.aqal-cell .q-count{font-size:26px;font-weight:700;color:var(--accent2)}
+.aqal-cell .q-miss{color:var(--danger);font-size:11px;margin-top:4px}
+.u-phases{display:flex}
+.u-phase{flex:1;padding:8px 4px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-right:none;font-size:10px;color:var(--text3)}
+.u-phase:first-child{border-radius:var(--r) 0 0 var(--r)}.u-phase:last-child{border-right:1px solid var(--border);border-radius:0 var(--r) var(--r) 0}
+.u-phase.active{background:var(--accent);color:#fff;font-weight:700}
+#toast{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px}
+.toast-item{padding:10px 16px;border-radius:var(--r);font-size:13px;max-width:360px;animation:si .2s}
+.toast-ok{background:#14532d;color:#4ade80;border:1px solid #166534}.toast-err{background:#451a1a;color:#f87171;border:1px solid #7f1d1d}
+@keyframes si{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border);border-top-color:var(--accent2);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pill-row{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.pill{padding:2px 8px;border-radius:20px;font-size:11px;background:var(--surface3);color:var(--text2)}
+.conf{display:inline-flex;align-items:center;gap:5px;font-size:12px}
+.conf-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.conf-high .conf-dot{background:var(--success)}.conf-med .conf-dot{background:var(--warn)}.conf-low .conf-dot{background:var(--danger)}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px}
+.tab{padding:9px 16px;cursor:pointer;font-size:13px;color:var(--text3);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab:hover{color:var(--text)}.tab.active{color:var(--accent2);border-bottom-color:var(--accent2);font-weight:600}
+.int-row{padding:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px}
+.int-title{font-size:14px;font-weight:600;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.int-meta{font-size:12px;color:var(--text3);margin-bottom:8px}
+.int-desc{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:8px}
+.val-item{padding:14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px}
+.val-meta{font-size:11px;color:var(--text3);margin-bottom:6px}
+.val-statement{font-size:13px;line-height:1.5;margin-bottom:10px}
+.empty{padding:40px;text-align:center;color:var(--text3)}
+.warn-banner{background:#3f2d13;border:1px solid #92400e;border-radius:var(--r);padding:10px 14px;font-size:13px;color:var(--warn);margin-bottom:16px}
+</style>
 </head>
 <body>
-
-<nav>
-  <div class="logo">Inter<span>flow</span></div>
-  <button class="nav-btn active" onclick="showView('dashboard')">Dashboard</button>
-  <button class="nav-btn" onclick="showView('validation')">Validation</button>
-  <select id="roleSelect" onchange="apiKey=this.value" title="Active role">
-    <option value="practitioner-key">Practitioner</option>
-    <option value="admin-key">Admin</option>
-    <option value="reviewer-key">Reviewer</option>
-    <option value="auditor-key">Auditor</option>
-  </select>
-</nav>
-
 <div id="toast"></div>
-
-<!-- Dashboard -->
-<div id="dashboard" class="view active">
-  <div class="sidebar">
-    <div class="sidebar-header">
-      Cases
-      <button class="btn btn-sm" onclick="refresh()" title="Refresh">↻</button>
-    </div>
-    <div class="sidebar-body" id="caseList">
-      <div style="padding:.85rem;color:var(--muted);font-size:.8rem">Loading…</div>
-    </div>
-    <div class="sidebar-footer">
-      <button class="btn btn-primary" style="width:100%" onclick="bootstrap()">+ Bootstrap Case</button>
-    </div>
+<nav>
+  <div class="nav-brand">Inter<span>flow</span></div>
+  <div class="nav-item active" data-view="overview">
+    <span>&#9632;</span><span>Overview</span>
   </div>
-
-  <div class="main" id="mainPanel">
-    <div class="empty-state">
-      <div style="font-size:2rem">⚡</div>
-      <div style="font-weight:600">Select or create a case</div>
-      <div style="font-size:.8rem">Use "Bootstrap Case" to start with sample data</div>
-    </div>
+  <div class="nav-item" data-view="cases">
+    <span>&#9654;</span><span>Cases</span>
   </div>
-</div>
-
+  <div class="nav-item" data-view="intake">
+    <span>&#43;</span><span>Intake</span>
+  </div>
+  <div class="nav-sep"></div>
+  <div class="nav-item" data-view="lens">
+    <span>&#9685;</span><span>Lens Analysis</span>
+  </div>
+  <div class="nav-item" data-view="studio">
+    <span>&#9733;</span><span>Intervention Studio</span>
+  </div>
+  <div class="nav-sep"></div>
+  <div class="nav-item" data-view="validation">
+    <span>&#10003;</span><span>Validation</span>
+  </div>
+  <div class="nav-item" data-view="outcomes">
+    <span>&#9650;</span><span>Outcomes</span>
+  </div>
+  <div class="nav-item" data-view="patterns">
+    <span>&#9675;</span><span>Patterns</span>
+  </div>
+  <div class="nav-item" data-view="registry">
+    <span>&#9724;</span><span>Registry</span>
+  </div>
+  <div class="nav-role">
+    <label>Role</label>
+    <select id="roleSelect">
+      <option value="admin">admin</option>
+      <option value="practitioner">practitioner</option>
+      <option value="reviewer">reviewer</option>
+      <option value="auditor">auditor</option>
+    </select>
+  </div>
+</nav>
+<main>
+  <div class="topbar">
+    <h1 id="topTitle">Overview</h1>
+    <div class="spacer"></div>
+    <div id="topSub" style="font-size:12px;color:var(--text3)"></div>
+  </div>
+  <div class="page" id="pageContent"></div>
+</main>
+</body>
 <script>
-// ── State ──────────────────────────────────────────────────────
-let apiKey = 'practitioner-key';
-let selectedCaseId = null;
+// ── State ──────────────────────────────────────────────────────────────────
+let S = {
+  view: 'overview',
+  role: 'admin',
+  cases: [],
+  activeCase: null,
+  patterns: [],
+  models: [],
+  pendingValidation: [],
+};
 
-// ── Utilities ──────────────────────────────────────────────────
-function toast(msg, dur=3000) {
-  const t = document.getElementById('toast');
-  t.textContent = msg; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), dur);
+// ── Utils ─────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const h = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const pct = v => `${Math.round((v||0)*100)}%`;
+const conf = v => v>=0.7?'high':v>=0.5?'med':'low';
+const confDot = v => `<span class="conf conf-${conf(v)}"><span class="conf-dot"></span>${pct(v)}</span>`;
+const badge = s => `<span class="badge badge-${s}">${s}</span>`;
+const riskBadge = r => `<span class="badge badge-${r||'medium'}">${r||'medium'}</span>`;
+const pill = s => `<span class="pill">${h(s)}</span>`;
+const pills = arr => arr&&arr.length?`<div class="pill-row">${arr.map(pill).join('')}</div>`:'';
+
+function toast(msg, ok=true) {
+  const t = document.createElement('div');
+  t.className = 'toast-item ' + (ok?'toast-ok':'toast-err');
+  t.textContent = msg;
+  $('toast').appendChild(t);
+  setTimeout(()=>t.remove(), 3500);
 }
 
 async function api(path, opts={}) {
-  const headers = { 'X-API-Key': apiKey, 'Content-Type': 'application/json', ...(opts.headers||{}) };
-  const res = await fetch(path, { ...opts, headers });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
-  return data;
-}
-
-function badge(status) {
-  return `<span class="badge badge-${status}">${status.replace(/_/g,' ')}</span>`;
-}
-function riskBadge(r) { return `<span class="badge badge-${r}">${r}</span>`; }
-
-function confBar(val, label='Confidence') {
-  const pct = Math.round((val||0)*100);
-  const cls = val>=0.7?'':val>=0.5?'warn':'danger';
-  return `<div class="conf-row">
-    <div class="conf-label"><span>${label}</span><span>${pct}%</span></div>
-    <div class="bar-track"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div>
-  </div>`;
-}
-
-// ── View switching ─────────────────────────────────────────────
-function showView(name) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.getElementById(name).classList.add('active');
-  document.querySelectorAll('.nav-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent.toLowerCase().startsWith(name.slice(0,4))));
-  if (name === 'validation') loadValidation();
-}
-
-// ── Case list ──────────────────────────────────────────────────
-async function refresh() {
-  const el = document.getElementById('caseList');
+  const role = S.role;
+  const defaults = {headers:{'X-Role':role,'Content-Type':'application/json'}};
+  const merged = {...defaults,...opts,headers:{...defaults.headers,...(opts.headers||{})}};
+  if (merged.body && typeof merged.body !== 'string') merged.body = JSON.stringify(merged.body);
   try {
-    const cases = await api('/cases');
-    if (!cases.length) {
-      el.innerHTML = '<div style="padding:.85rem;color:var(--muted);font-size:.8rem">No cases yet.</div>';
-      return;
-    }
-    el.innerHTML = cases.map(c => `
-      <div class="case-item${c.id===selectedCaseId?' selected':''}"
-           onclick="selectCase('${c.id}')">
-        <div class="ci-title">${c.title}</div>
-        ${badge(c.status)}
-      </div>`).join('');
-  } catch(e) { toast('Error loading cases: '+e.message); }
-}
-
-// ── Select / load case ─────────────────────────────────────────
-async function selectCase(id) {
-  selectedCaseId = id;
-  refresh();
-  const main = document.getElementById('mainPanel');
-  main.innerHTML = '<div class="empty-state"><span class="spinner"></span></div>';
-  try {
-    const b = await api(`/cases/${id}/bundle`);
-    renderCase(b);
+    const r = await fetch(path, merged);
+    const data = await r.json().catch(()=>({}));
+    if (!r.ok) { toast((data.detail||r.statusText), false); throw new Error(data.detail||r.statusText); }
+    return data;
   } catch(e) {
-    main.innerHTML = `<div class="empty-state" style="color:var(--danger)">${e.message}</div>`;
+    if (!e.message.includes('fetch')) {} // already toasted
+    throw e;
   }
 }
 
-function renderCase(b) {
-  const c = b.case;
-  const canRun = ['evidence','active'].includes(c.status);
-  document.getElementById('mainPanel').innerHTML = `
-    <div class="case-header">
-      <h2>${c.title}</h2>
-      <div class="case-meta">${badge(c.status)}</div>
-      <div class="case-summary">${c.context_summary}</div>
-      ${c.goals?.length ? `<div class="pills">${c.goals.map(g=>`<span class="pill">${g}</span>`).join('')}</div>` : ''}
-      <div class="case-actions">
-        <button class="btn" onclick="seedEvidence('${c.id}')">Seed Evidence</button>
-        <button class="btn btn-primary" onclick="runWorkflow('${c.id}')"
-          ${canRun?'':'disabled title="Add evidence first"'}>▶ Run Workflow</button>
+function setView(v) {
+  S.view = v;
+  document.querySelectorAll('.nav-item').forEach(el=>{
+    el.classList.toggle('active', el.dataset.view===v);
+  });
+  const titles = {overview:'Overview',cases:'Cases',intake:'Intake / New Case',lens:'Lens Analysis',studio:'Intervention Studio',validation:'Validation Queue',outcomes:'Outcomes',patterns:'Pattern Memory',registry:'Model Registry'};
+  $('topTitle').textContent = titles[v]||v;
+  render();
+}
+
+async function loadCases() {
+  try { S.cases = await api('/cases'); } catch(e) { S.cases = []; }
+}
+async function loadModels() {
+  try { S.models = await api('/models'); } catch(e) { S.models = []; }
+}
+async function loadPatterns() {
+  try { S.patterns = await api('/patterns'); } catch(e) { S.patterns = []; }
+}
+
+async function loadCase(id) {
+  try {
+    const bundle = await api(`/cases/${id}/bundle`);
+    S.activeCase = bundle;
+    // load OD assessments
+    const [adkar, theoryU, plan] = await Promise.all([
+      api(`/cases/${id}/adkar`).catch(()=>null),
+      api(`/cases/${id}/theory-u`).catch(()=>null),
+      api(`/cases/${id}/process-plan`).catch(()=>null),
+    ]);
+    S.activeCase._adkar = adkar;
+    S.activeCase._theory_u = theoryU;
+    S.activeCase._plan = plan;
+  } catch(e) {}
+}
+
+function render() {
+  const p = $('pageContent');
+  const views = {overview:renderOverview,cases:renderCases,intake:renderIntake,lens:renderLens,studio:renderStudio,validation:renderValidation,outcomes:renderOutcomes,patterns:renderPatterns,registry:renderRegistry};
+  const fn = views[S.view];
+  if (fn) p.innerHTML = fn();
+  bindActions();
+}
+
+// ── Overview ───────────────────────────────────────────────────────────────
+function renderOverview() {
+  const total = S.cases.length;
+  const active = S.cases.filter(c=>c.status==='active').length;
+  const pending = S.cases.filter(c=>c.status==='human_validation').length;
+  const closed = S.cases.filter(c=>c.status==='closed').length;
+  const inProgress = total - active - pending - closed;
+  return `
+  <div class="card-grid" style="margin-bottom:20px">
+    <div class="stat"><div class="lbl">Total Cases</div><div class="val">${total}</div></div>
+    <div class="stat"><div class="lbl">Active</div><div class="val" style="color:var(--success)">${active}</div></div>
+    <div class="stat"><div class="lbl">Pending Validation</div><div class="val" style="color:var(--warn)">${pending}</div></div>
+    <div class="stat"><div class="lbl">In Progress</div><div class="val" style="color:var(--accent2)">${inProgress}</div></div>
+    <div class="stat"><div class="lbl">Models Registered</div><div class="val">${S.models.length}</div></div>
+    <div class="stat"><div class="lbl">Patterns</div><div class="val">${S.patterns.length}</div></div>
+  </div>
+  ${pending>0?`<div class="warn-banner">&#9888; ${pending} case${pending>1?'s':''} pending human validation — <a href="#" data-view="validation" class="nav-link">review now</a></div>`:''}
+  <div class="card">
+    <div class="card-title">Quick Actions</div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnBootstrap">Bootstrap Sample Case</button>
+      <button class="btn btn-secondary" id="btnSeedModels">Seed 9 Meta-Models</button>
+      <button class="btn btn-secondary" data-view-btn="intake">New Case</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Recent Cases</div>
+    ${S.cases.length===0?`<div class="empty"><div class="icon">&#128193;</div>No cases yet. Bootstrap one or create via Intake.</div>`:`
+    <table>
+      <tr><th>Title</th><th>Domain</th><th>Status</th><th>Evidence</th></tr>
+      ${S.cases.slice(0,6).map(c=>`
+      <tr style="cursor:pointer" data-open="${h(c.id)}">
+        <td>${h(c.title)}</td>
+        <td>${h(c.domain||'—')}</td>
+        <td>${badge(c.status)}</td>
+        <td>${(c.evidence_ids||[]).length}</td>
+      </tr>`).join('')}
+    </table>`}
+  </div>`;
+}
+</script>
+<script>
+// ── Cases view ─────────────────────────────────────────────────────────────
+function renderCases() {
+  return `
+  <div style="display:flex;gap:10px;margin-bottom:16px">
+    <input id="caseSearch" placeholder="Search cases…" style="max-width:300px"/>
+    <button class="btn btn-primary" data-view-btn="intake">+ New Case</button>
+  </div>
+  ${S.cases.length===0?`<div class="empty"><div class="icon">&#128193;</div>No cases yet.</div>`:`
+  <div class="card" style="padding:0;overflow:hidden">
+  <table>
+    <tr><th>ID</th><th>Title</th><th>Domain</th><th>Sponsor</th><th>Status</th><th>Evidence</th><th></th></tr>
+    ${S.cases.map(c=>`
+    <tr>
+      <td style="color:var(--text3);font-size:11px">${h(c.id)}</td>
+      <td><b>${h(c.title)}</b><br><span style="font-size:11px;color:var(--text3)">${h(c.context_summary||'').slice(0,60)}</span></td>
+      <td>${h(c.domain||'—')}</td>
+      <td>${h(c.sponsor||'—')}</td>
+      <td>${badge(c.status)}</td>
+      <td>${(c.evidence_ids||[]).length}</td>
+      <td><button class="btn btn-sm btn-secondary" data-open="${h(c.id)}">Open</button></td>
+    </tr>`).join('')}
+  </table></div>`}`;
+}
+
+// ── Intake view ────────────────────────────────────────────────────────────
+function renderIntake() {
+  return `
+  <div class="card">
+    <div class="card-title">New Case</div>
+    <form id="intakeForm">
+      <div class="form-row">
+        <div class="form-group"><label>Title *</label><input name="title" placeholder="E.g. Cross-functional decision friction" required/></div>
+        <div class="form-group"><label>Domain</label><input name="domain" placeholder="E.g. culture, leadership, cross-functional"/></div>
       </div>
-      <div id="jobBanner_${c.id}"></div>
-    </div>
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('overview')">Overview</button>
-      <button class="tab-btn" onclick="switchTab('hyp')">Hypotheses (${b.hypotheses?.length||0})</button>
-      <button class="tab-btn" onclick="switchTab('int')">Interventions (${b.interventions?.length||0})</button>
-      <button class="tab-btn" onclick="switchTab('ev')">Evidence (${b.evidence?.length||0})</button>
-      <button class="tab-btn" onclick="switchTab('ingest')">Ingest Text</button>
-      <button class="tab-btn" onclick="switchTab('audit')">Audit (${b.audit_logs?.length||0})</button>
-    </div>
-    <div class="tab-content">
-      <div id="tab-overview" class="tab-pane active">${renderOverview(b)}</div>
-      <div id="tab-hyp"      class="tab-pane">${renderHypotheses(b.hypotheses||[])}</div>
-      <div id="tab-int"      class="tab-pane">${renderInterventions(b.interventions||[])}</div>
-      <div id="tab-ev"       class="tab-pane">${renderEvidence(b.evidence||[])}</div>
-      <div id="tab-ingest"   class="tab-pane">${renderIngest(c.id)}</div>
-      <div id="tab-audit"    class="tab-pane">${renderAudit(b.audit_logs||[])}</div>
-    </div>`;
+      <div class="form-group"><label>Context Summary *</label><textarea name="context_summary" placeholder="Describe the situation, what triggered this case, key observations…" required></textarea></div>
+      <div class="form-group"><label>Goals (one per line)</label><textarea name="goals" placeholder="reduce decision churn&#10;improve accountability" style="min-height:60px"></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label>Sponsor</label><input name="sponsor" placeholder="Name / role commissioning this case"/></div>
+        <div class="form-group"><label>Sensitivity Level</label>
+          <select name="sensitivity_level"><option value="standard">Standard</option><option value="sensitive">Sensitive</option><option value="confidential">Confidential</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Constraints (one per line)</label><textarea name="constraints" placeholder="12-week timeline&#10;no budget for external consultants" style="min-height:60px"></textarea></div>
+        <div class="form-group"><label>Timeline (weeks)</label><input name="timeline_weeks" type="number" min="0" placeholder="12"/></div>
+      </div>
+      <div class="btn-row">
+        <button type="submit" class="btn btn-primary">Create Case</button>
+      </div>
+    </form>
+  </div>`;
 }
 
-function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(b =>
-    b.classList.toggle('active', b.getAttribute('onclick').includes(`'${name}'`)));
-  document.querySelectorAll('.tab-pane').forEach(p =>
-    p.classList.toggle('active', p.id === `tab-${name}`));
-}
+// ── Lens Analysis view ─────────────────────────────────────────────────────
+function renderLens() {
+  const c = S.activeCase;
+  if (!c) return renderCasePicker('Lens Analysis');
+  const cs = c.case||{};
+  const ev = c.evidence||[];
+  const hyps = c.hypotheses||[];
+  const adkar = c._adkar;
+  const tu = c._theory_u;
 
-// ── Overview tab ───────────────────────────────────────────────
-function renderOverview(b) {
-  const c = b.case;
-  const qColors = {I:'#ede9fe',We:'#dbeafe',It:'#dcfce7',Its:'#fef3c7'};
-  const qLabels = {I:'Subjective (I)',We:'Intersubjective (We)',It:'Behavioural (It)',Its:'Structural (Its)'};
-  const counts  = {I:0,We:0,It:0,Its:0};
-  (b.evidence||[]).forEach(e => { if(e.aqal_quadrant_hint in counts) counts[e.aqal_quadrant_hint]++; });
-  const missing = Object.keys(counts).filter(q => counts[q]===0);
+  // AQAL coverage
+  const aqalCounts = {I:0,We:0,It:0,Its:0};
+  ev.forEach(e=>{ if(e.aqal_quadrant_hint && aqalCounts[e.aqal_quadrant_hint]!==undefined) aqalCounts[e.aqal_quadrant_hint]++; });
+  const aqalHtml = `
+  <div class="aqal-grid">
+    <div class="aqal-cell"><div class="q-label">I — Subjective</div><div class="q-count">${aqalCounts.I}</div>${aqalCounts.I===0?'<div class="q-miss">&#9888; Missing</div>':''}</div>
+    <div class="aqal-cell"><div class="q-label">We — Intersubjective</div><div class="q-count">${aqalCounts.We}</div>${aqalCounts.We===0?'<div class="q-miss">&#9888; Missing</div>':''}</div>
+    <div class="aqal-cell"><div class="q-label">It — Behavioural</div><div class="q-count">${aqalCounts.It}</div>${aqalCounts.It===0?'<div class="q-miss">&#9888; Missing</div>':''}</div>
+    <div class="aqal-cell"><div class="q-label">Its — Structural</div><div class="q-count">${aqalCounts.Its}</div>${aqalCounts.Its===0?'<div class="q-miss">&#9888; Missing</div>':''}</div>
+  </div>`;
 
-  const aqal = `
-    <div class="aqal-grid">
-      ${Object.keys(qLabels).map(q=>`
-        <div class="aqal-cell" style="border-left:3px solid ${qColors[q]}">
-          <div class="aqal-q">${qLabels[q]}</div>
-          <div class="aqal-count">${counts[q]}</div>
-          ${counts[q]===0?'<div class="aqal-missing">⚠ no coverage</div>':''}
-        </div>`).join('')}
-    </div>
-    ${missing.length?`<div style="font-size:.78rem;color:var(--warn);margin-top:.3rem">Balancing questions needed for quadrant(s): ${missing.join(', ')}</div>`:''}`;
+  const uPhases = ['Downloading','Seeing','Sensing','Presencing','Crystallizing','Prototyping','Performing'];
+  const curPhase = tu ? tu.current_phase : null;
+  const uHtml = `<div class="u-phases">${uPhases.map(p=>`<div class="u-phase${curPhase&&curPhase.toLowerCase()===p.toLowerCase()?' active':''}">${p}</div>`).join('')}</div>`;
 
-  const topHyps = (b.hypotheses||[]).slice(0,2).map(h=>
-    `<div class="card"><div style="font-size:.85rem;line-height:1.6">${h.statement}</div>${confBar(h.confidence)}</div>`
-  ).join('') || '<div style="color:var(--muted);font-size:.82rem">No hypotheses yet — run the workflow.</div>';
+  const adkarHtml = adkar ? `
+  ${['awareness','desire','knowledge','ability','reinforcement'].map(k=>{
+    const v = adkar[k]||0;
+    const cls = v>=0.6?'green':v>=0.4?'amber':'red';
+    return `<div class="bar-row"><div class="bar-label">${k.charAt(0).toUpperCase()+k.slice(1)}</div><div class="bar-wrap"><div class="bar-fill ${cls}" style="width:${pct(v)}"></div></div><div class="bar-val">${pct(v)}</div></div>`;
+  }).join('')}
+  <div style="font-size:12px;color:var(--warn);margin-top:8px">Bottleneck: <b>${adkar.bottleneck||'?'}</b></div>
+  <div style="font-size:12px;color:var(--text2);margin-top:4px">${h(adkar.recommended_focus||'')}</div>` : `<div class="empty" style="padding:20px">Run workflow to get ADKAR assessment.</div>`;
 
-  const topInt = [...(b.interventions||[])].sort((a,z)=>(z.score||0)-(a.score||0))[0];
-  const intHtml = topInt
-    ? `<div class="card"><h4>${topInt.title}</h4>${confBar(topInt.score,'Score')}${riskBadge(topInt.risk_profile)}</div>`
-    : '<div style="color:var(--muted);font-size:.82rem">No interventions yet.</div>';
-
-  const valWarn = c.status==='human_validation'
-    ? `<div class="warn-banner">⚠ This case requires <strong>human validation</strong> before it can proceed. Switch to the <strong>Validation</strong> view.</div>` : '';
+  const hypsHtml = hyps.length===0?`<div class="empty" style="padding:20px">No hypotheses yet.</div>`:hyps.map(hy=>`
+  <div style="padding:12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">${confDot(hy.confidence||0)}${pills(hy.model_sources)}</div>
+    <div style="font-size:13px;line-height:1.5">${h(hy.statement||'')}</div>
+    ${hy.alternatives&&hy.alternatives.length?`<div style="font-size:11px;color:var(--text3);margin-top:6px">Alt: ${hy.alternatives.map(h).join(' · ')}</div>`:''}
+  </div>`).join('');
 
   return `
-    <div class="section-title">AQAL Coverage (${b.evidence?.length||0} evidence items)</div>
-    ${aqal}
-    <div class="section-title">Top Hypotheses</div>${topHyps}
-    <div class="section-title">Top Intervention</div>${intHtml}
-    ${valWarn}`;
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <span style="font-size:13px;color:var(--text2)">Case:</span>
+    ${renderCaseSelector()}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+    <div class="card"><div class="card-title">AQAL Coverage</div>${aqalHtml}</div>
+    <div class="card"><div class="card-title">ADKAR Assessment</div>${adkarHtml}</div>
+  </div>
+  <div class="card"><div class="card-title">Theory U — Current Phase</div>${uHtml}
+    ${tu?`<div style="font-size:12px;color:var(--text2);margin-top:10px">${h(tu.social_field_quality||'')}</div>${tu.blockers&&tu.blockers.length?`<div style="margin-top:8px"><span style="font-size:11px;color:var(--text3)">Blockers:</span>${pills(tu.blockers)}</div>`:''}${tu.entry_points&&tu.entry_points.length?`<div style="margin-top:6px"><span style="font-size:11px;color:var(--text3)">Entry points:</span>${pills(tu.entry_points)}</div>`:''}`:``}
+  </div>
+  <div class="card"><div class="card-title">Hypotheses (${hyps.length})</div>${hypsHtml}</div>`;
+}
+</script>
+<script>
+// ── Intervention Studio ────────────────────────────────────────────────────
+function renderStudio() {
+  const c = S.activeCase;
+  if (!c) return renderCasePicker('Intervention Studio');
+  const ints = (c.interventions||[]).slice().sort((a,b)=>(b.score||0)-(a.score||0));
+  const plan = c._plan;
+  return `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <span style="font-size:13px;color:var(--text2)">Case:</span>${renderCaseSelector()}
+  </div>
+  <div class="card">
+    <div class="card-title">Ranked Interventions (${ints.length})</div>
+    ${ints.length===0?`<div class="empty">No interventions yet. Run the workflow first.</div>`:ints.map((i,idx)=>`
+    <div class="int-row">
+      <div class="int-title"><span style="color:var(--text3);font-size:12px">#${idx+1}</span>${h(i.title)} ${riskBadge(i.risk_profile)} ${i.adkar_stage?`<span class="pill">${h(i.adkar_stage)}</span>`:''}
+      </div>
+      <div class="int-meta">Score: <b>${((i.score||0)*100).toFixed(0)}%</b> &nbsp;·&nbsp; Impact: ${pct(i.impact)} &nbsp;·&nbsp; Feasibility: ${pct(i.feasibility)} &nbsp;·&nbsp; Regen fit: ${pct(i.regenerative_fit)} &nbsp;·&nbsp; Est. value: ${i.time_to_value_weeks||'?'} wk</div>
+      <div class="int-desc">${h(i.intended_outcome||'')}</div>
+      ${i.prerequisites&&i.prerequisites.length?`<div style="font-size:11px;color:var(--text3)">Prerequisites:</div>${pills(i.prerequisites)}`:''}
+      ${i.contraindications&&i.contraindications.length?`<div style="font-size:11px;color:var(--danger);margin-top:4px">Contraindications:</div>${pills(i.contraindications)}`:''}
+      <div style="font-size:11px;color:var(--success);margin-top:6px">&#9679; ${h(i.regenerative_impact_notes||'')}</div>
+    </div>`).join('')}
+  </div>
+  ${plan?`<div class="card">
+    <div class="card-title">Process Plan — ${plan.total_duration_weeks} weeks</div>
+    ${(plan.phases||[]).map((ph,i)=>`
+    <div style="padding:12px;background:var(--surface2);border-left:3px solid var(--accent);border-radius:0 var(--r) var(--r) 0;margin-bottom:10px">
+      <div style="font-weight:600;margin-bottom:4px">Phase ${i+1}: ${h(ph.phase||'')}</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:4px">${h(ph.objective||'')} &nbsp;·&nbsp; <span style="color:var(--info)">${ph.duration_weeks||'?'} weeks</span></div>
+      ${pills(ph.activities||[])}
+      ${ph.success_indicators&&ph.success_indicators.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px">&#10003; ${ph.success_indicators.join(' · ')}</div>`:''}
+    </div>`).join('')}
+    ${plan.key_risks&&plan.key_risks.length?`<div style="font-size:12px;color:var(--danger);margin-top:8px">&#9888; Key risks: ${plan.key_risks.join(' · ')}</div>`:''}
+  </div>`:''}`;
 }
 
-// ── Hypotheses tab ─────────────────────────────────────────────
-function renderHypotheses(hyps) {
-  if (!hyps.length) return '<div style="color:var(--muted)">No hypotheses yet. Run the workflow first.</div>';
-  return hyps.map(h=>`
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.4rem;flex-wrap:wrap">
-        <div class="pills">${(h.model_sources||[]).map(m=>`<span class="pill">${m}</span>`).join('')}</div>
-        ${h.human_validation_required?'<span class="badge badge-human_validation">review required</span>':''}
-      </div>
-      <div style="font-size:.85rem;line-height:1.6">${h.statement}</div>
-      ${confBar(h.confidence)}
-      ${h.alternatives?.length?`
-        <div class="section-title">Alternative explanations</div>
-        <ul style="margin:.2rem 0 0 1rem;font-size:.8rem;color:var(--muted)">
-          ${h.alternatives.map(a=>`<li>${a}</li>`).join('')}
-        </ul>`:''}
-      ${h.missing_information?.length?`
-        <div class="section-title">Missing information</div>
-        <div class="pills">${h.missing_information.map(m=>`<span class="pill">${m}</span>`).join('')}</div>`:''}
-      ${h.misuse_risks?.length?`
-        <div class="section-title">Misuse risks</div>
-        <div class="pills">${h.misuse_risks.map(r=>`<span class="pill" style="color:var(--danger)">${r}</span>`).join('')}</div>`:''}
-    </div>`).join('');
+// ── Validation Queue ───────────────────────────────────────────────────────
+function renderValidation() {
+  const pending = S.cases.filter(c=>c.status==='human_validation');
+  if (pending.length===0) return `<div class="empty"><div class="icon">&#10003;</div>No cases pending validation. All clear.</div>`;
+  const ac = S.activeCase;
+  const hyps = ac ? (ac.hypotheses||[]) : [];
+  const ints = ac ? (ac.interventions||[]) : [];
+  return `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <span style="font-size:13px;color:var(--warn)">&#9888; ${pending.length} case${pending.length>1?'s':''} require review</span>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    ${pending.map(c=>`<button class="btn btn-sm ${ac&&ac.case&&ac.case.id===c.id?'btn-primary':'btn-secondary'}" data-open="${h(c.id)}">${h(c.title.slice(0,30))}</button>`).join('')}
+  </div>
+  ${ac&&ac.case?`
+  <div class="card">
+    <div class="card-title">Hypotheses Requiring Validation</div>
+    ${hyps.filter(h2=>h2.human_validation_required).map(hy=>`
+    <div class="val-item">
+      <div class="val-meta">Hypothesis · ${hy.id} · ${confDot(hy.confidence||0)} · ${pills(hy.model_sources)}</div>
+      <div class="val-statement">${h(hy.statement||'')}</div>
+      ${hy.alternatives&&hy.alternatives.length?`<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Alt: ${hy.alternatives.map(h).join(' · ')}</div>`:''}
+      <form class="val-form" data-target="hypothesis" data-id="${h(hy.id)}" data-case="${h(ac.case.id)}">
+        <div class="form-group"><label>Reviewer Note</label><textarea name="rationale" placeholder="Your assessment…"></textarea></div>
+        <div style="display:flex;gap:8px">
+          <button type="submit" name="action" value="approve" class="btn btn-success btn-sm">Approve</button>
+          <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">Reject</button>
+          <button type="submit" name="action" value="annotate" class="btn btn-secondary btn-sm">Annotate</button>
+        </div>
+      </form>
+    </div>`).join('')}
+  </div>
+  <div class="card">
+    <div class="card-title">Interventions</div>
+    ${ints.map(i=>`
+    <div class="val-item">
+      <div class="val-meta">Intervention · ${i.id} · ${riskBadge(i.risk_profile)}</div>
+      <div class="val-statement">${h(i.title||'')} — ${h(i.intended_outcome||'')}</div>
+      <form class="val-form" data-target="intervention" data-id="${h(i.id)}" data-case="${h(ac.case.id)}">
+        <div class="form-group"><label>Reviewer Note</label><textarea name="rationale" placeholder="Your assessment…"></textarea></div>
+        <div style="display:flex;gap:8px">
+          <button type="submit" name="action" value="approve" class="btn btn-success btn-sm">Approve</button>
+          <button type="submit" name="action" value="reject" class="btn btn-danger btn-sm">Reject</button>
+        </div>
+      </form>
+    </div>`).join('')}
+  </div>`:`<div class="empty">Select a case above to review.</div>`}`;
 }
 
-// ── Interventions tab ──────────────────────────────────────────
-function renderInterventions(ints) {
-  if (!ints.length) return '<div style="color:var(--muted)">No interventions yet. Run the workflow first.</div>';
-  return [...ints].sort((a,z)=>(z.score||0)-(a.score||0)).map(i=>`
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.4rem">
-        <h4 style="flex:1">${i.title}</h4>${riskBadge(i.risk_profile)}
+// ── Outcomes view ─────────────────────────────────────────────────────────
+function renderOutcomes() {
+  const c = S.activeCase;
+  const outcomes = c ? (c.outcomes||[]) : [];
+  const ints = c ? (c.interventions||[]) : [];
+  return `
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <span style="font-size:13px;color:var(--text2)">Case:</span>${renderCaseSelector()}
+  </div>
+  <div class="card">
+    <div class="card-title">Record Outcome Observation</div>
+    <form id="outcomeForm">
+      <div class="form-group"><label>Case ID</label><input name="case_id" value="${c&&c.case?c.case.id:''}" readonly/></div>
+      <div class="form-group"><label>Intervention</label>
+        <select name="intervention_id">${ints.map(i=>`<option value="${h(i.id)}">${h(i.title)}</option>`).join('')}<option value="">Other</option></select>
       </div>
-      ${confBar(i.score||0,'Score')}
-      <div style="font-size:.82rem;color:var(--muted);margin:.3rem 0">${i.intended_outcome}</div>
-      <div class="score-grid">
-        ${confBar(i.impact||0,'Impact')}${confBar(i.feasibility||0,'Feasibility')}
-        ${confBar(i.evidence_strength||0,'Evidence strength')}${confBar(i.regenerative_fit||0,'Regen. fit')}
+      <div class="form-group"><label>Observed Effects (one per line)</label><textarea name="observed_effects" placeholder="Describe what changed…"></textarea></div>
+      <div class="form-group"><label>Confidence (0.0–1.0)</label><input name="confidence" type="number" min="0" max="1" step="0.05" value="0.6"/></div>
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:500">Regenerative Signals</div>
+        <div class="form-row">
+          <div class="form-group"><label>Trust</label><input name="regen_trust" placeholder="increasing|stable|declining"/></div>
+          <div class="form-group"><label>Resilience</label><input name="regen_resilience" placeholder="increasing|stable|declining"/></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Agency</label><input name="regen_agency" placeholder="increasing|stable|declining"/></div>
+          <div class="form-group"><label>Capability</label><input name="regen_capability" placeholder="increasing|stable|declining"/></div>
+        </div>
       </div>
-      ${i.regenerative_impact_notes?`<div style="font-size:.78rem;color:var(--muted);margin-top:.4rem">${i.regenerative_impact_notes}</div>`:''}
-      ${i.prerequisites?.length?`
-        <div class="section-title">Prerequisites</div>
-        <div class="pills">${i.prerequisites.map(p=>`<span class="pill">${p}</span>`).join('')}</div>`:''}
-      ${i.contraindications?.length?`
-        <div class="section-title">Contraindications</div>
-        <div class="pills">${i.contraindications.map(c=>`<span class="pill" style="color:var(--danger)">${c}</span>`).join('')}</div>`:''}
-    </div>`).join('');
+      <button type="submit" class="btn btn-primary">Submit Observation</button>
+    </form>
+  </div>
+  ${outcomes.length?`<div class="card">
+    <div class="card-title">Past Observations (${outcomes.length})</div>
+    ${outcomes.map(o=>`
+    <div style="padding:12px;background:var(--surface2);border-radius:var(--r);margin-bottom:8px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">${o.intervention_id} · ${confDot(o.confidence||0)}</div>
+      ${pills(o.observed_effects||[])}
+      <div style="margin-top:6px;font-size:11px;color:var(--text3)">${Object.entries(o.regenerative_signals||{}).map(([k,v])=>`${k}: <b>${h(v)}</b>`).join(' · ')}</div>
+    </div>`).join('')}
+  </div>`:''}`;
 }
-
-// ── Evidence tab ───────────────────────────────────────────────
-function renderEvidence(evs) {
-  if (!evs.length) return '<div style="color:var(--muted)">No evidence yet. Use Seed Evidence or Ingest Text.</div>';
-  const qc = {I:'#ede9fe',We:'#dbeafe',It:'#dcfce7',Its:'#fef3c7'};
-  return evs.map(e=>`
-    <div class="card" style="border-left:3px solid ${qc[e.aqal_quadrant_hint]||'#e2e2e0'}">
-      <div style="display:flex;align-items:center;gap:.35rem;margin-bottom:.3rem;flex-wrap:wrap">
-        ${e.aqal_quadrant_hint?`<span class="badge" style="background:${qc[e.aqal_quadrant_hint]}">${e.aqal_quadrant_hint}</span>`:''}
-        <span class="pill">${e.evidence_category}</span>
-        <span class="pill">${e.source}</span>
-        <span style="margin-left:auto;font-size:.72rem;color:var(--muted)">
-          reliability ${Math.round((e.reliability_estimate||0)*100)}%</span>
+</script>
+<script>
+// ── Patterns view ──────────────────────────────────────────────────────────
+function renderPatterns() {
+  return `
+  <div class="card">
+    <div class="card-title">Add Pattern</div>
+    <form id="patternForm">
+      <div class="form-row">
+        <div class="form-group"><label>Pattern Type</label><input name="pattern_type" placeholder="recurring_tension, structural_gap…"/></div>
+        <div class="form-group"><label>Confidence (0–1)</label><input name="confidence" type="number" min="0" max="1" step="0.05" value="0.65"/></div>
       </div>
-      <div style="font-size:.85rem;line-height:1.6">"${e.raw_excerpt}"</div>
-    </div>`).join('');
-}
-
-// ── Ingest tab ─────────────────────────────────────────────────
-function renderIngest(caseId) {
-  return `<div class="ingest-form">
-    <h4>Extract structured evidence from raw text</h4>
-    <div class="form-row">
-      <input id="iSrc" placeholder="Source name (e.g. interview_03)" />
-      <select id="iType">
-        <option value="interview">Interview</option>
-        <option value="survey">Survey</option>
-        <option value="artifact">Artifact / document</option>
-        <option value="observation">Observation</option>
-        <option value="notes">Notes</option>
-      </select>
-    </div>
-    <textarea id="iText" placeholder="Paste transcript, notes, or survey responses…"></textarea>
-    <button class="btn btn-primary" onclick="ingestText('${caseId}')">Extract Evidence</button>
-    <div id="iResult" style="margin-top:.6rem"></div>
+      <div class="form-group"><label>Signature</label><input name="pattern_signature" placeholder="Short slug e.g. clarity_ownership_gap"/></div>
+      <div class="form-group"><label>Outcome Summary</label><textarea name="outcome_summary" placeholder="Observed in contexts with…"></textarea></div>
+      <button type="submit" class="btn btn-primary btn-sm">Save Pattern</button>
+    </form>
+  </div>
+  <div class="card">
+    <div class="card-title">Stored Patterns (${S.patterns.length})</div>
+    ${S.patterns.length===0?`<div class="empty">No patterns yet.</div>`:S.patterns.map(p=>`
+    <div style="padding:12px;background:var(--surface2);border-radius:var(--r);margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span class="pill">${h(p.pattern_type)}</span>
+        <span class="pill">${h(p.pattern_signature)}</span>
+        ${confDot(p.confidence||0)}
+      </div>
+      <div style="font-size:13px;color:var(--text2)">${h(p.outcome_summary||'')}</div>
+      ${pills(p.associated_lenses)}
+    </div>`).join('')}
   </div>`;
 }
 
-// ── Audit tab ──────────────────────────────────────────────────
-function renderAudit(logs) {
-  if (!logs.length) return '<div style="color:var(--muted)">No audit events yet.</div>';
-  return logs.map(a=>`
-    <div class="card">
-      <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
-        <span style="font-size:.8rem;font-weight:600">${a.action}</span>
-        <span style="font-size:.75rem;color:var(--muted)">${a.actor_id}</span>
-        <span style="margin-left:auto;font-size:.72rem;color:var(--muted)">${new Date(a.created_at).toLocaleString()}</span>
+// ── Registry view ──────────────────────────────────────────────────────────
+function renderRegistry() {
+  return `
+  <div class="btn-row" style="margin-bottom:16px">
+    <button class="btn btn-primary" id="btnSeedRegistry">Seed 9 Default Models</button>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <tr><th>Model</th><th>Version</th><th>Min Evidence</th><th>Ethical Risks</th><th>Max Conf</th></tr>
+      ${S.models.length===0?`<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:20px">No models registered. Click "Seed 9 Default Models".</td></tr>`:S.models.map(m=>`
+      <tr>
+        <td><b>${h(m.name)}</b><br><span style="font-size:11px;color:var(--text3)">${h((m.description||m.purpose||'').slice(0,80))}</span></td>
+        <td style="color:var(--text3)">${h(m.version||'1.0')}</td>
+        <td>${m.min_evidence_requirements&&m.min_evidence_requirements.total?m.min_evidence_requirements.total:'—'}</td>
+        <td>${pills(m.ethical_risks||[])}</td>
+        <td>${m.confidence_rules&&m.confidence_rules.max_without_review?pct(m.confidence_rules.max_without_review):'—'}</td>
+      </tr>`).join('')}
+    </table>
+  </div>
+  <div class="card">
+    <div class="card-title">Register Custom Model</div>
+    <form id="modelForm">
+      <div class="form-row">
+        <div class="form-group"><label>Name *</label><input name="name" required/></div>
+        <div class="form-group"><label>Version</label><input name="version" value="1.0"/></div>
       </div>
-      <div class="pills">${(a.models_used||[]).map(m=>`<span class="pill">${m}</span>`).join('')}</div>
-      ${Object.entries(a.policy_results||{}).map(([k,v])=>`
-        <div style="font-size:.76rem;margin-top:.2rem">
-          <span style="color:var(--muted)">${k}:</span>
-          <span style="color:${v==='pass'?'var(--ok)':v==='none'?'var(--muted)':v.startsWith('[')||v==='0'?'var(--ok)':'var(--warn)'}"> ${v}</span>
-        </div>`).join('')}
-    </div>`).join('');
-}
-</script>
-
-<script>
-// ── Actions ────────────────────────────────────────────────────
-async function bootstrap() {
-  try {
-    const d = await api('/bootstrap-case', {method:'POST'});
-    toast('Case created: '+d.case.title);
-    await refresh();
-    selectCase(d.case.id);
-  } catch(e) { toast('Error: '+e.message); }
+      <div class="form-group"><label>Description</label><textarea name="description" style="min-height:60px"></textarea></div>
+      <button type="submit" class="btn btn-secondary btn-sm">Register Model</button>
+    </form>
+  </div>`;
 }
 
-async function seedEvidence(caseId) {
-  try {
-    await api(`/cases/${caseId}/seed-sample-evidence`, {method:'POST'});
-    toast('Sample evidence seeded');
-    selectCase(caseId); refresh();
-  } catch(e) { toast('Error: '+e.message); }
+// ── Helpers ────────────────────────────────────────────────────────────────
+function renderCasePicker(viewName) {
+  return `<div class="card">
+    <div class="card-title">Select a Case</div>
+    <p style="color:var(--text2);margin-bottom:12px">Choose a case to view ${viewName}.</p>
+    ${renderCaseSelector()}
+  </div>`;
 }
 
-async function runWorkflow(caseId) {
-  try {
-    const d = await api(`/jobs/workflow/${caseId}`, {method:'POST'});
-    toast('Workflow started');
-    pollJob(caseId, d.job_id);
-  } catch(e) { toast('Error: '+e.message); }
+function renderCaseSelector() {
+  return `<select id="caseSelector" style="max-width:320px">
+    <option value="">— select case —</option>
+    ${S.cases.map(c=>`<option value="${h(c.id)}" ${S.activeCase&&S.activeCase.case&&S.activeCase.case.id===c.id?'selected':''}>${h(c.title)} (${c.status})</option>`).join('')}
+  </select>`;
 }
 
-function pollJob(caseId, jobId) {
-  const banner = document.getElementById(`jobBanner_${caseId}`);
-  if (banner) banner.innerHTML = `<div class="job-row"><span class="spinner"></span> Running job ${jobId}…</div>`;
-  const iv = setInterval(async () => {
+// ── Action bindings ────────────────────────────────────────────────────────
+function bindActions() {
+  // Nav links in content
+  document.querySelectorAll('[data-view]').forEach(el=>{
+    if (!el.classList.contains('nav-item')) return;
+    el.onclick = ()=>setView(el.dataset.view);
+  });
+  document.querySelectorAll('[data-view-btn]').forEach(el=>{
+    el.onclick = ()=>setView(el.dataset.viewBtn);
+  });
+  document.querySelectorAll('a[data-view]').forEach(el=>{
+    el.onclick = e=>{ e.preventDefault(); setView(el.dataset.view); };
+  });
+
+  // Open case from table or button
+  document.querySelectorAll('[data-open]').forEach(el=>{
+    el.onclick = async () => {
+      const id = el.dataset.open;
+      await loadCase(id);
+      const views = ['lens','studio','validation','outcomes'];
+      if (!views.includes(S.view)) setView('lens');
+      else render();
+    };
+  });
+
+  // Case selector dropdown
+  const sel = $('caseSelector');
+  if (sel) sel.onchange = async ()=>{
+    if (sel.value) { await loadCase(sel.value); render(); }
+  };
+
+  // Bootstrap
+  const btnB = $('btnBootstrap');
+  if (btnB) btnB.onclick = async ()=>{
+    btnB.disabled=true; btnB.innerHTML='<span class="spinner"></span>';
+    try {
+      await api('/bootstrap-case',{method:'POST'});
+      await loadCases(); toast('Sample case created!'); render();
+    } finally { btnB.disabled=false; btnB.innerHTML='Bootstrap Sample Case'; }
+  };
+
+  // Seed models (overview)
+  const btnS = $('btnSeedModels');
+  if (btnS) btnS.onclick = async ()=>{
+    btnS.disabled=true;
+    try {
+      const r = await api('/seed-defaults',{method:'POST'});
+      await loadModels(); toast(`Seeded ${r.count} models`); render();
+    } finally { btnS.disabled=false; }
+  };
+
+  // Seed models (registry)
+  const btnSR = $('btnSeedRegistry');
+  if (btnSR) btnSR.onclick = async ()=>{
+    btnSR.disabled=true;
+    try {
+      const r = await api('/seed-defaults',{method:'POST'});
+      await loadModels(); toast(`Seeded ${r.count} models`); render();
+    } finally { btnSR.disabled=false; }
+  };
+
+  // Intake form
+  const intakeForm = $('intakeForm');
+  if (intakeForm) intakeForm.onsubmit = async e=>{
+    e.preventDefault();
+    const fd = new FormData(intakeForm);
+    const goals = (fd.get('goals')||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const constraints = (fd.get('constraints')||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const payload = {
+      id: 'case_' + Math.random().toString(36).slice(2,10),
+      title: fd.get('title'),
+      context_summary: fd.get('context_summary'),
+      goals,
+      domain: fd.get('domain')||'',
+      sponsor: fd.get('sponsor')||'',
+      sensitivity_level: fd.get('sensitivity_level')||'standard',
+      constraints,
+      timeline_weeks: parseInt(fd.get('timeline_weeks')||'0',10)||0,
+    };
+    const btn = intakeForm.querySelector('[type=submit]');
+    btn.disabled=true;
+    try {
+      const created = await api('/cases',{method:'POST',body:payload});
+      await loadCases(); await loadCase(created.id);
+      toast('Case created!'); setView('lens');
+    } finally { btn.disabled=false; }
+  };
+
+  // Validation forms
+  document.querySelectorAll('.val-form').forEach(form=>{
+    form.onsubmit = async e=>{
+      e.preventDefault();
+      const btn = e.submitter;
+      const action = btn ? btn.value : 'annotate';
+      const fd = new FormData(form);
+      const payload = {
+        id: 'val_' + Math.random().toString(36).slice(2,10),
+        case_id: form.dataset.case,
+        target_type: form.dataset.target,
+        target_id: form.dataset.id,
+        reviewer: S.role + '_user',
+        action,
+        rationale: fd.get('rationale')||'No note provided.',
+      };
+      btn.disabled=true;
+      try {
+        await api('/validations',{method:'POST',body:payload});
+        await loadCases(); await loadCase(form.dataset.case);
+        toast('Validation submitted'); render();
+      } finally { btn.disabled=false; }
+    };
+  });
+
+  // Outcome form
+  const outcomeForm = $('outcomeForm');
+  if (outcomeForm) outcomeForm.onsubmit = async e=>{
+    e.preventDefault();
+    const fd = new FormData(outcomeForm);
+    const effects = (fd.get('observed_effects')||'').split('\n').map(s=>s.trim()).filter(Boolean);
+    const payload = {
+      id: 'out_' + Math.random().toString(36).slice(2,10),
+      case_id: fd.get('case_id'),
+      intervention_id: fd.get('intervention_id')||'',
+      observed_effects: effects,
+      confidence: parseFloat(fd.get('confidence')||'0.6'),
+      regenerative_signals: {
+        trust: fd.get('regen_trust')||'',
+        resilience: fd.get('regen_resilience')||'',
+        agency: fd.get('regen_agency')||'',
+        capability: fd.get('regen_capability')||'',
+      },
+    };
+    const btn = outcomeForm.querySelector('[type=submit]');
+    btn.disabled=true;
+    try {
+      await api('/outcomes',{method:'POST',body:payload});
+      await loadCase(payload.case_id);
+      toast('Outcome recorded!'); render();
+    } finally { btn.disabled=false; }
+  };
+
+  // Pattern form
+  const patternForm = $('patternForm');
+  if (patternForm) patternForm.onsubmit = async e=>{
+    e.preventDefault();
+    const fd = new FormData(patternForm);
+    const payload = {
+      id: 'pat_' + Math.random().toString(36).slice(2,10),
+      pattern_type: fd.get('pattern_type'),
+      pattern_signature: fd.get('pattern_signature'),
+      outcome_summary: fd.get('outcome_summary'),
+      confidence: parseFloat(fd.get('confidence')||'0.65'),
+      supporting_case_ids: [],
+      associated_lenses: [],
+    };
+    const btn = patternForm.querySelector('[type=submit]');
+    btn.disabled=true;
+    try {
+      await api('/patterns',{method:'POST',body:payload});
+      await loadPatterns(); toast('Pattern saved!'); render();
+    } finally { btn.disabled=false; }
+  };
+
+  // Model form
+  const modelForm = $('modelForm');
+  if (modelForm) modelForm.onsubmit = async e=>{
+    e.preventDefault();
+    const fd = new FormData(modelForm);
+    const payload = {
+      name: fd.get('name'),
+      version: fd.get('version')||'1.0',
+      description: fd.get('description')||'',
+    };
+    const btn = modelForm.querySelector('[type=submit]');
+    btn.disabled=true;
+    try {
+      await api('/models',{method:'POST',body:payload});
+      await loadModels(); toast('Model registered!'); render();
+    } finally { btn.disabled=false; }
+  };
+
+  // Workflow run button
+  const runBtn = $('btnRunWorkflow');
+  if (runBtn) runBtn.onclick = async ()=>{
+    const id = S.activeCase&&S.activeCase.case&&S.activeCase.case.id;
+    if (!id) { toast('Select a case first', false); return; }
+    runBtn.disabled=true; runBtn.innerHTML='<span class="spinner"></span> Running…';
+    try {
+      const job = await api(`/jobs/workflow/${id}`,{method:'POST'});
+      toast('Workflow started, polling…');
+      await pollJob(job.job_id, id);
+    } catch(e) {
+      runBtn.disabled=false; runBtn.innerHTML='Run Workflow';
+    }
+  };
+
+  // Nav item clicks
+  document.querySelectorAll('.nav-item[data-view]').forEach(el=>{
+    el.onclick = ()=>setView(el.dataset.view);
+  });
+}
+
+async function pollJob(jobId, caseId) {
+  for (let i=0;i<30;i++) {
+    await new Promise(r=>setTimeout(r,2000));
     try {
       const j = await api(`/jobs/${jobId}`);
-      if (j.status === 'completed' || j.status === 'failed') {
-        clearInterval(iv);
-        const colour = j.status==='completed' ? 'var(--ok)' : 'var(--danger)';
-        if (banner) banner.innerHTML = `<div class="job-row" style="color:${colour}">● Workflow ${j.status}</div>`;
-        toast('Workflow '+j.status);
-        selectCase(caseId); refresh();
+      if (j.status==='completed') {
+        await loadCase(caseId); await loadCases();
+        toast('Workflow complete!'); render(); return;
       }
-    } catch { clearInterval(iv); }
-  }, 2500);
-}
-
-async function ingestText(caseId) {
-  const src  = document.getElementById('iSrc').value.trim() || 'raw_input';
-  const type = document.getElementById('iType').value;
-  const txt  = document.getElementById('iText').value.trim();
-  const res  = document.getElementById('iResult');
-  if (!txt) { toast('Paste some text first'); return; }
-  res.innerHTML = '<div class="job-row"><span class="spinner"></span> Extracting evidence…</div>';
-  try {
-    const items = await api(`/cases/${caseId}/ingest-text`, {
-      method:'POST', body: JSON.stringify({raw_text:txt, source:src, source_type:type})
-    });
-    res.innerHTML = `<div style="color:var(--ok);margin-bottom:.4rem">✓ Extracted ${items.length} item(s)</div>${renderEvidence(items)}`;
-    toast(`Extracted ${items.length} evidence items`);
-    refresh();
-  } catch(e) { res.innerHTML = `<div style="color:var(--danger)">${e.message}</div>`; }
-}
-
-// ── Validation panel ───────────────────────────────────────────
-async function loadValidation() {
-  const el = document.getElementById('valList');
-  el.innerHTML = '<div style="color:var(--muted)">Loading…</div>';
-  try {
-    const all = await api('/cases');
-    const pending = all.filter(c => c.status === 'human_validation');
-    if (!pending.length) {
-      el.innerHTML = '<div style="color:var(--muted);padding:.4rem 0">No cases awaiting validation.</div>';
-      return;
-    }
-    const bundles = await Promise.all(pending.map(c => api(`/cases/${c.id}/bundle`)));
-    el.innerHTML = bundles.map(b => renderValCase(b)).join('');
-  } catch(e) {
-    el.innerHTML = `<div style="color:var(--danger)">${e.message}</div>`;
+      if (j.status==='failed') { toast('Workflow failed: '+(j.payload&&j.payload.error||'unknown'), false); return; }
+    } catch(e) { break; }
   }
+  toast('Workflow timed out — check server', false);
 }
 
-function renderValCase(b) {
-  const c = b.case;
-  const items = [
-    ...(b.hypotheses||[]).map(h => ({type:'hypothesis', obj:h})),
-    ...(b.interventions||[]).map(i => ({type:'intervention', obj:i})),
-  ];
-  if (!items.length) return '';
-  return `<div class="val-case">
-    <div class="val-case-hdr"><h3>${c.title}</h3>${badge(c.status)}</div>
-    ${items.map(({type,obj}) => `
-      <div class="val-item">
-        <div class="val-item-hdr">
-          <span class="val-type">${type}</span>
-          ${type==='hypothesis'
-            ? `<div class="pills">${(obj.model_sources||[]).map(m=>`<span class="pill">${m}</span>`).join('')}</div>`
-            : riskBadge(obj.risk_profile)}
-          ${type==='hypothesis' ? confBar(obj.confidence) : confBar(obj.score||0,'Score')}
-        </div>
-        <div class="val-body">
-          ${type==='hypothesis' ? obj.statement : `<strong>${obj.title}</strong> — ${obj.intended_outcome}`}
-        </div>
-        ${type==='hypothesis' && obj.alternatives?.length
-          ? `<div class="val-alts">Alternatives: ${obj.alternatives.join(' · ')}</div>` : ''}
-        <div class="val-actions">
-          <input class="val-rationale" id="rat_${c.id}_${obj.id}" placeholder="Rationale…" />
-          <button class="btn btn-primary btn-sm" onclick="submitVal('${c.id}','${obj.id}','${type}','approve')">Approve</button>
-          <button class="btn btn-danger btn-sm"  onclick="submitVal('${c.id}','${obj.id}','${type}','reject')">Reject</button>
-          <button class="btn btn-sm"             onclick="submitVal('${c.id}','${obj.id}','${type}','annotate')">Annotate</button>
-          <button class="btn btn-warn btn-sm"    onclick="submitVal('${c.id}','${obj.id}','${type}','request_more_data')">Need More Data</button>
-        </div>
-      </div>`).join('')}
-  </div>`;
-}
-
-async function submitVal(caseId, targetId, targetType, action) {
-  const rationale = document.getElementById(`rat_${caseId}_${targetId}`)?.value.trim();
-  if (!rationale) { toast('Add a rationale before submitting'); return; }
-  const saved = apiKey;
-  apiKey = 'reviewer-key';
-  try {
-    await api('/validations', { method:'POST', body: JSON.stringify({
-      id: `val_${Date.now().toString(36)}`,
-      case_id: caseId, target_type: targetType, target_id: targetId,
-      reviewer: 'ui_reviewer', action, rationale,
-    })});
-    toast(`${action} submitted`);
-    loadValidation();
-  } catch(e) { toast('Error: '+e.message); }
-  apiKey = saved;
-}
-
-// ── Init ───────────────────────────────────────────────────────
-refresh();
+// ── Boot ────────────────────────────────────────────────────────────────────
+(async function init() {
+  $('roleSelect').onchange = ()=>{ S.role=$('roleSelect').value; };
+  document.querySelectorAll('.nav-item[data-view]').forEach(el=>{
+    el.onclick = ()=>setView(el.dataset.view);
+  });
+  await Promise.all([loadCases(), loadModels(), loadPatterns()]);
+  render();
+})();
 </script>
-
-<div id="validation" class="view">
-  <div class="val-hdr">
-    <h2>Validation Panel</h2>
-    <p>Cases in <strong>human_validation</strong> status. Use the Reviewer role to submit decisions.</p>
-  </div>
-  <div id="valList"><div style="color:var(--muted)">Loading…</div></div>
-</div>
-
-
-</body>
 </html>

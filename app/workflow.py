@@ -3,7 +3,17 @@ from __future__ import annotations
 import logging
 from uuid import uuid4
 
-from .agents import aqal_mapping, intervention_candidates, synthesis_output, systems_hypothesis, value_logic_hypothesis
+from .agents import (
+    adkar_assessment,
+    aqal_mapping,
+    intervention_candidates,
+    process_guidance,
+    regenerative_governance_assessment,
+    synthesis_output,
+    systems_hypothesis,
+    theory_u_assessment,
+    value_logic_hypothesis,
+)
 from .governance import enforce_hypothesis_policy, enforce_intervention_policy
 from .schemas import AuditLog, CaseStatus, Evidence
 from .store import InMemoryStore
@@ -85,6 +95,19 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         store.save_intervention(i)
         case.intervention_ids.append(i.id)
 
+    # ── Extended OD assessments (ADKAR, Theory U, Regenerative, Process Plan) ─
+    adkar = adkar_assessment(case_id, evidence)
+    store.save_adkar(adkar)
+
+    theory_u = theory_u_assessment(case_id, evidence)
+    store.save_theory_u(theory_u)
+
+    regen = regenerative_governance_assessment(case_id, [h1, h2], ints)
+    store.save_regen_assessment(case_id, regen)
+
+    plan = process_guidance(case_id, [h1, h2], ints, adkar, theory_u)
+    store.save_process_plan(plan)
+
     # ── Governance review ───────────────────────────────────────────────────
     case.status = CaseStatus.governance_review
     review_required = any(not v["pass"] for v in hypothesis_checks.values()) or any(
@@ -111,7 +134,10 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         actor_type="workflow_engine",
         actor_id="run_case_workflow",
         action="workflow_run",
-        models_used=["AQAL", "Spiral Dynamics", "VSM", "Cynefin", "ADKAR", "Antifragility", "Flow"],
+        models_used=[
+            "AQAL", "Spiral Dynamics", "VSM", "Cynefin",
+            "ADKAR", "Antifragility", "Biomimicry", "Flow", "Theory U",
+        ],
         evidence_ids=[e.id for e in evidence],
         assumptions=["Hypotheses are provisional and context-dependent."],
         alternatives_considered=["Interpersonal-only explanation", "structure-only explanation"],
@@ -133,6 +159,10 @@ def run_case_workflow(store: InMemoryStore, case_id: str) -> dict:
         "hypothesis_checks": hypothesis_checks,
         "intervention_checks": intervention_checks,
         "analysis": synthesis.model_dump(),
+        "adkar": adkar.model_dump(),
+        "theory_u": theory_u.model_dump(),
+        "regenerative": regen,
+        "process_plan": plan.model_dump(),
         "review_required": review_required,
         "memory_writeback": {
             "case_updated": True,
